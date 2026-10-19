@@ -1,0 +1,7 @@
+{
+  "description": "DaviddTech+ market weather: storm levels in the status line and daily units, read-only, through the DaviddTech+ connector",
+  "hooks": {},
+  "modules": [
+    "./register.ts"
+  ]
+}

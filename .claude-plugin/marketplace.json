@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "daviddtechplus",
+  "description": "DaviddTech+ add-ons for Claude Code.",
+  "owner": {
+    "name": "DaviddTech"
+  },
+  "plugins": [
+    {
+      "name": "daviddtechplus",
+      "description": "DaviddTech+ in Claude Code, on top of the DaviddTech+ connector from claude.ai: ready routines as slash commands (after-close desk, storm check, watchlist triage, rule journal, DCA check-in, earnings week) and a market weather report with storm levels.",
+      "version": "1.0.0",
+      "author": {
+        "name": "DaviddTech"
+      },
+      "homepage": "https://www.skool.com/daviddtech/about",
+      "source": "./plugin"
+    }
+  ]
+}

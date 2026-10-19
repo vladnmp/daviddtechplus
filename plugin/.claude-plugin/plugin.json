@@ -1,0 +1,22 @@
+{
+  "name": "daviddtechplus",
+  "version": "1.0.0",
+  "description": "DaviddTech+ in Claude Code, on top of the DaviddTech+ connector from claude.ai: ready routines as slash commands (after-close desk, storm check, watchlist triage, rule journal, DCA check-in, earnings week) and a market weather report with storm levels.",
+  "author": {
+    "name": "DaviddTech"
+  },
+  "homepage": "https://www.skool.com/daviddtech/about",
+  "userConfig": {
+    "band": {
+      "type": "string",
+      "title": "Market weather line",
+      "description": "auto shows the storm levels of eight reference markets in the status line when a session starts (free, refreshed at most every 6 hours); command shows them only after /daviddtechplus-weather; off never shows them.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "command",
+        "off"
+      ]
+    }
+  }
+}

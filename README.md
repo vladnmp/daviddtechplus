@@ -26,7 +26,10 @@ Then open a new session and type `/daviddtechplus-weather`. Ready routines as sl
 Details: [plugin/README.md](plugin/README.md).
 
 ## 3. The skill (optional)
-`skill/daviddtechplus` holds the same routines as an Agent Skill, for apps that load skill folders.
+The same routines as an Agent Skill. In claude.ai or the Claude apps: download
+[daviddtechplus-skill.zip](https://github.com/vladnmp/daviddtechplus/raw/main/daviddtechplus-skill.zip), then
+Settings → Capabilities → Skills → upload it. `skill/daviddtechplus` holds the same files for apps that load
+skill folders.
 
 ## What is in here
 No data and no keys: text that tells your assistant how to use the DaviddTech+ connector, slash

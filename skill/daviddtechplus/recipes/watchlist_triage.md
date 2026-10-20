@@ -4,7 +4,7 @@ Sort a list of up to 10 symbols into calm, normal and stormy groups before looki
 
 1. One scan of the list (1 unit).
 2. Groups by storm level (1-2, 3, 4-5), each sorted by 80% range width.
-3. For single stocks: whether an estimated earnings date falls inside the window (swing odds note).
+3. Scheduled US releases inside the window (the scan's releases line) and, for single stocks, whether an estimated earnings date falls inside it (swing odds note).
 4. A brief for any symbol the member wants in depth (1 unit each).
 
 **Shows:** Three short groups with the numbers behind each placement.
@@ -15,4 +15,4 @@ Sort a list of up to 10 symbols into calm, normal and stormy groups before looki
 
 Daily units: a brief, a scan (up to 10 symbols) or a DCA pacing call is 1 unit each; re-reading a brief already pulled today (same symbol, horizon and data) is free; the market backdrop, capabilities, recipes, the supported list and the usage check are free.
 
-*Source: DaviddTech+ (skool.com/daviddtech/about) — Informational only, not financial advice.*
+*Source: DaviddTech+ (skool.com/daviddtech/about)*

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
-  DISCLAIMER,
+  SOURCE_LINE,
   MEANING,
   NEXT,
   NOT_CONNECTED,
@@ -37,7 +37,7 @@ const BACKDROP = [
   '## DaviddTech+ Market backdrop: 8 reference markets',
   '| Market | Symbol | As of | Change 1 / 5 / 20 | Volatility (1y pct) | 200-row trend | Swing 5 (x usual), storm |',
   'Storm levels: SPY 3, QQQ 3, IWM 4, TLT 1, GLD 2, UUP 2, BTC/USD 4, ETH/USD 4.',
-  '*Source: DaviddTech+ (skool.com/daviddtech/about) — Informational only, not financial advice.*',
+  '*Source: DaviddTech+ (skool.com/daviddtech/about)*',
 ].join('\n\n')
 const WEATHER = 'SPY 3 · QQQ 3 · IWM 4 · TLT 1 · GLD 2 · UUP 2 · BTC 4 · ETH 4'
 // The structured result, as market_backdrop returns it (fields the mod does not read elided).
@@ -49,7 +49,7 @@ const MARKETS = {
   ] as const).map(([symbol, label, level]) => ({
     symbol, label, asof: symbol.includes('/') ? '2026-10-18' : '2026-10-16', swing_5d: { chance_pct: 30, storm_level: level },
   })),
-  disclaimer: DISCLAIMER,
+  source: SOURCE_LINE,
 }
 const REPORT = [
   'DaviddTech+ weather · end-of-day data as of 2026-10-16 (crypto 2026-10-18)',
@@ -59,7 +59,7 @@ const REPORT = [
   'calm 1: TLT (long-term US Treasuries)',
   MEANING,
   NEXT,
-  DISCLAIMER,
+  SOURCE_LINE,
 ].join('\n')
 const USAGE = JSON.stringify({
   account: 'member@example.com', daily_limit: 20, used_today: 2, remaining_today: 18, burst_per_minute: 10,
@@ -147,7 +147,7 @@ describe('reading the connector text', () => {
 
   test('the report groups the markets by storm level, stormiest first, then the meaning and what to try next', () => {
     expect(reportOf(MARKETS, WEATHER)).toBe(REPORT)
-    expect(reportOf(null, WEATHER)).toBe([`DaviddTech+ weather: ${WEATHER}`, MEANING, NEXT, DISCLAIMER].join('\n'))
+    expect(reportOf(null, WEATHER)).toBe([`DaviddTech+ weather: ${WEATHER}`, MEANING, NEXT, SOURCE_LINE].join('\n'))
     expect(contextOf(BACKDROP)).toContain(BACKDROP)
   })
 

@@ -18,7 +18,7 @@ export const RETRY_MS = 20_000
 export const WEATHER_KEY = 'weather'
 export const NOT_CONNECTED =
   `DaviddTech+ is not connected yet: add it once in claude.ai under Settings > Connectors > Add custom connector (name DaviddTech+, URL ${CONNECTOR_URL}), sign in with your membership email, then open a new session.`
-export const DISCLAIMER = 'Source: DaviddTech+ (skool.com/daviddtech/about) — Informational only, not financial advice.'
+export const SOURCE_LINE = 'Source: DaviddTech+ (skool.com/daviddtech/about)'
 export const LEVELS = ['calm', 'normal', 'choppy', 'stormy', 'very stormy']
 export const MEANING =
   'Storm level: the chance of bigger-than-usual moves over the next 5 sessions (days for crypto) against its usual rate, up or down alike; 1 calm to 5 very stormy.'
@@ -93,13 +93,13 @@ export function reportOf(data: unknown, line: string): string {
   const stocks = latest(markets.filter(market => !market.isCrypto))
   const crypto = latest(markets.filter(market => market.isCrypto))
   const asOf = stocks === null ? '' : ` · end-of-day data as of ${stocks}${crypto !== null && crypto !== stocks ? ` (crypto ${crypto})` : ''}`
-  const disclaimer = (data as { disclaimer?: unknown } | null)?.disclaimer
+  const source = (data as { source?: unknown } | null)?.source
 
   return [
     ...(rows.length > 0 ? [`DaviddTech+ weather${asOf}`, ...rows] : [`DaviddTech+ weather: ${line}`]),
     MEANING,
     NEXT,
-    typeof disclaimer === 'string' ? disclaimer : DISCLAIMER,
+    typeof source === 'string' ? source : SOURCE_LINE,
   ].join('\n')
 }
 

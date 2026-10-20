@@ -15,4 +15,4 @@ The member's own rules, written in plain words over brief fields, checked after 
 
 Daily units: a brief, a scan (up to 10 symbols) or a DCA pacing call is 1 unit each; re-reading a brief already pulled today (same symbol, horizon and data) is free; the market backdrop, capabilities, recipes, the supported list and the usage check are free.
 
-*Source: DaviddTech+ (skool.com/daviddtech/about) — Informational only, not financial advice.*
+*Source: DaviddTech+ (skool.com/daviddtech/about)*

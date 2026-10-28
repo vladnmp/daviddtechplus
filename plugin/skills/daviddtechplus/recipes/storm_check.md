@@ -2,7 +2,7 @@
 
 How bumpy the coming week could be: the market first, then the member's own symbols.
 
-1. Market backdrop (free): storm level and swing odds of the eight reference markets, and the next scheduled US releases (CPI, jobs report, Fed decision).
+1. Market backdrop (free): storm level and swing odds of the eight reference markets, and the next scheduled events (US releases, Fed decisions, US half-days).
 2. Optional scan of the member's list (1 unit) for their storm levels side by side.
 
 **Shows:** Storm levels with their meaning. Storm level 1-5: the 5-step swing chance as a multiple of its usual rate (1 under 0.7x calm, 2 normal, 3 from 1.15x choppy, 4 from 1.55x stormy, 5 from 2x very stormy); the size of moves only, up or down alike.

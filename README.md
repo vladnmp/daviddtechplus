@@ -21,6 +21,7 @@ Then open a new session and type `/daviddtechplus-weather`. Ready routines as sl
 - `/daviddtechplus:dca`: For members investing a set amount on a schedule: the pacing reading per symbol at their usual time.
 - `/daviddtechplus:earnings`: A single stock around its next earnings report: what the estimated date means for its odds.
 - `/daviddtechplus:night`: A daily after-close review of the member's watchlist: what changed since the last briefs, with details only where something moved.
+- `/daviddtechplus:same-bet`: Which symbols on the member's list moved almost as one, and how many independent bets the list moved like, lately vs usually.
 - `/daviddtechplus:recipes`: every routine in one line.
 
 Details: [plugin/README.md](plugin/README.md).

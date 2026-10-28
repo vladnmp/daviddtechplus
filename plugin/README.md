@@ -1,6 +1,6 @@
 # DaviddTech+ for Claude Code
 
-DaviddTech+ in Claude Code, on top of the DaviddTech+ connector from claude.ai: ready routines as slash commands (after-close desk, night desk, storm check, watchlist triage, rule journal, DCA check-in, earnings week) and a market weather report with storm levels.
+DaviddTech+ in Claude Code, on top of the DaviddTech+ connector from claude.ai: ready routines as slash commands (after-close desk, night desk, storm check, watchlist triage, same-bet check, rule journal, DCA check-in, earnings week) and a market weather report with storm levels.
 
 ## Install
 1. The connector (once, for every Claude app). Add the connector once in claude.ai: Settings > Connectors > Add custom connector, name `DaviddTech+`, URL `https://vlad-64070--daviddtech-plus.modal.run/mcp`, keep the detected options, then Connect and sign in with the email of the DaviddTech+ membership (the sign-in page then asks to allow access). It then works in claude.ai, the desktop and mobile apps and Claude Code. In claude.ai chats, set + > Connectors > Tool access to Tools already loaded so Claude uses it by itself. On a Team or Enterprise plan an organization owner adds it.
@@ -21,6 +21,7 @@ there with `claude mcp add --transport http daviddtechplus https://vlad-64070--d
 - `/daviddtechplus:dca <symbols> [usual amount]`: For members investing a set amount on a schedule: the pacing reading per symbol at their usual time.
 - `/daviddtechplus:earnings <stock symbol>`: A single stock around its next earnings report: what the estimated date means for its odds.
 - `/daviddtechplus:night <watchlist, e.g. NVDA AMD BTC>`: A daily after-close review of the member's watchlist: what changed since the last briefs, with details only where something moved.
+- `/daviddtechplus:same-bet <2-10 symbols, e.g. NVDA AMD SMH BTC>`: Which symbols on the member's list moved almost as one, and how many independent bets the list moved like, lately vs usually.
 
 ## Market weather (Claude Code 2.1.287 or later)
 - `/daviddtechplus-weather`: the storm levels of eight reference markets, stormiest first, with what they mean and

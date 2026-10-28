@@ -4,6 +4,7 @@ A single stock around its next earnings report: what the estimated date means fo
 
 1. A brief (1 unit): swing and big-day odds that include the estimated earnings date, the storm level, the levels with touch chances and the 80% range.
 2. The earnings facts line: the estimated session after the report and the last filing date (an estimate from past SEC filings, not a confirmed date).
+3. The earnings-days line: the median and largest move on the last up to 8 earnings days, with a follow-up on the odds of a move beyond the median one by the next earnings day (or as far as the odds reach).
 
 **Shows:** The odds next to their usual rates, the estimated report window and the range.
 

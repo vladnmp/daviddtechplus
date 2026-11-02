@@ -6,7 +6,7 @@ A daily after-close review of the member's watchlist: what changed since the las
 2. One scan of the member's watchlist (1 unit, up to 10 symbols); its Since last column says per symbol what changed since the earlier brief.
 3. A note of any scheduled event inside the window (US releases, Fed, ECB, BoJ or BoE decisions, US half-days), from the scan's scheduled-events line.
 4. From the scan's same-bet check, a note when the group's moving-together number lately is clearly above or below usual, or when a pair that moved almost as one appears that the previous night's journal (when the member keeps one) did not list; it describes past moves only.
-5. Full briefs (1 unit each) only for symbols with a notable change: a close outside the earlier 80% range, a level or the invalidation crossed, or the storm level up 2 or more; each brief's What changed section lists every change.
+5. Full briefs (1 unit each) only for symbols with a notable change: a close outside the earlier 80% range, a level or the break level crossed, or the storm level up 2 or more; each brief's What changed section lists every change.
 6. A short desk note: what changed, what is unusual vs usual, and the levels worth an alert with their touch chances.
 7. An offer to schedule it daily with the scheduled tasks of the member's own app.
 

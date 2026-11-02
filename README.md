@@ -22,6 +22,7 @@ Then open a new session and type `/daviddtechplus-weather`. Ready routines as sl
 - `/daviddtechplus:earnings`: A single stock around its next earnings report: what the estimated date means for its odds.
 - `/daviddtechplus:night`: A daily after-close review of the member's watchlist: what changed since the last briefs, with details only where something moved.
 - `/daviddtechplus:same-bet`: Which symbols on the member's list moved almost as one, and how many independent bets the list moved like, lately vs usually.
+- `/daviddtechplus:plan`: How the member's own trade plans on one symbol could play out by a day: the chance each opens, which exit comes first and how often each profit exit is reached.
 - `/daviddtechplus:recipes`: every routine in one line.
 
 Details: [plugin/README.md](plugin/README.md).
@@ -35,5 +36,7 @@ skill folders.
 ## What is in here
 No data and no keys: text that tells your assistant how to use the DaviddTech+ connector, slash
 commands, and a small read-only module for the Claude Code weather report.
+
+© DaviddTech. Free for DaviddTech+ members; all rights reserved.
 
 *Source: DaviddTech+ (skool.com/daviddtech/about)*

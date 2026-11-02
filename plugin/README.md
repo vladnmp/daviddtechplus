@@ -22,6 +22,7 @@ there with `claude mcp add --transport http daviddtechplus https://vlad-64070--d
 - `/daviddtechplus:earnings <stock symbol>`: A single stock around its next earnings report: what the estimated date means for its odds.
 - `/daviddtechplus:night <watchlist, e.g. NVDA AMD BTC>`: A daily after-close review of the member's watchlist: what changed since the last briefs, with details only where something moved.
 - `/daviddtechplus:same-bet <2-10 symbols, e.g. NVDA AMD SMH BTC>`: Which symbols on the member's list moved almost as one, and how many independent bets the list moved like, lately vs usually.
+- `/daviddtechplus:plan <symbol and plan, e.g. NVDA open 180, loss exit 172, profit exits 190 200, by Friday>`: How the member's own trade plans on one symbol could play out by a day: the chance each opens, which exit comes first and how often each profit exit is reached.
 
 ## Market weather (Claude Code 2.1.287 or later)
 - `/daviddtechplus-weather`: the storm levels of eight reference markets, stormiest first, with what they mean and

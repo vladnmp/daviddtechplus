@@ -13,6 +13,7 @@ the member's DaviddTech+ email. Without the connector these routines have no dat
 ## Tools and daily units
 - `analyze_asset` (1 daily unit): One asset in depth: the full Alpha Brief (forecast path, 1/5/20-step view, levels with touch chances, volatility, trend, benchmark, scenarios).
 - `level_odds` (1 daily unit): The odds at the member's own prices (1-10 levels or % moves) by a day or date: the chance each is touched by then, the chance the close ends beyond it and the touch chance by day; free when the symbol's brief was pulled today.
+- `plan_check` (1 daily unit): 1-5 trade plans on one symbol (open level, loss exit, 1-4 profit exits) by a day or date: the chance each opens, which exit comes first, the chance each profit exit is reached, reward-to-risk and the still-open range; free when the symbol's brief was pulled today.
 - `scan_assets` (1 daily unit): 1-10 symbols side by side in one table: median move, 80% range and width, volatility, nearest levels with touch chances, beta; sorted by range width. For 2+ symbols, a same-bet check: how strongly they moved together lately vs usually, pairs that moved almost as one and how many independent bets they moved like.
 - `dca_pacing` (1 daily unit): 1-10 symbols: market-side multipliers of a usual recurring (DCA) contribution (steady, dip, defensive profiles) with their readings, tested trade-offs vs plain DCA, the rules as tested and, for 1-3 symbols, 52 weekly rows as CSV.
 - `market_backdrop` (free): How markets look today: eight reference markets (SPY, QQQ, IWM, TLT, GLD, UUP, BTC, ETH) with 1/5/20-session change, volatility regime, 200-row trend state and 5-session swing odds vs usual, plus the next scheduled events.
@@ -35,6 +36,7 @@ Opt-in routines that chain the tools. The member picks one; the assistant reads 
 - [Earnings week](recipes/earnings_week.md): A single stock around its next earnings report: what the estimated date means for its odds.
 - [Night desk](recipes/night_desk.md): A daily after-close review of the member's watchlist: what changed since the last briefs, with details only where something moved.
 - [Same-bet check](recipes/same_bet.md): Which symbols on the member's list moved almost as one, and how many independent bets the list moved like, lately vs usually.
+- [Plan check](recipes/plan_check.md): How the member's own trade plans on one symbol could play out by a day: the chance each opens, which exit comes first and how often each profit exit is reached.
 
 ## Reading the numbers
 - Every figure is in percent from the last close, at the stated horizon (steps are trading sessions for

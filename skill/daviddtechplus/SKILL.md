@@ -41,6 +41,8 @@ Opt-in routines that chain the tools. The member picks one; the assistant reads 
 ## Reading the numbers
 - Every figure is in percent from the last close, at the stated horizon (steps are trading sessions for
   stocks, ETFs and FX, calendar days for crypto).
+- Prices: the assistant looks up the live price first (broker or exchange tool, or a web search) and
+  passes it as `price_now`; levels in prices then work and every level also comes as a price at it.
 - Storm level 1-5: the 5-step swing chance as a multiple of its usual rate (1 under 0.7x calm, 2 normal, 3 from 1.15x choppy, 4 from 1.55x stormy, 5 from 2x very stormy); the size of moves only, up or down alike.
 - Briefs present numbers and neutral definitions; the interpretation, and any decision, stays with the
   member.

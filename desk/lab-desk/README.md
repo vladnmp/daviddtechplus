@@ -1,6 +1,6 @@
 # Lab desk
 
-The first piece of the Lab's trading desk inside Claude Code: see the market and read the DaviddTech+ forecast without opening TradingView or an exchange screen. Read-only: it places no orders and never reads keys or wallets. DaviddTech never trades or holds your money. If you trade, you connect your own exchange on your own machine and place your own orders.
+The first piece of the Lab's trading desk inside Claude Code: see the market and read the DaviddTech+ forecast without opening TradingView or an exchange screen. Read-only: it places no orders and never asks for keys. If you give it a public Hyperliquid address (`/lab-trades`), your PC reads that address's trades straight from Hyperliquid; the address is never sent to DaviddTech. DaviddTech never trades or holds your money. If you trade, you connect your own exchange on your own machine and place your own orders.
 
 ## Install
 
@@ -38,13 +38,14 @@ Type `/lab`. It opens the BTC 1h chart and lists everything below. New here? `/l
 - **Bar replay** (`/lab-chart replay`, or the Replay button): hides the last 100 candles (`replay 50`, or `replay 2026-11-20 08:00` UTC) so you can practise reading a chart without seeing what came next. Next (n) shows one more candle, `/lab-chart next 10` jumps, Live (x) or `/lab-chart replay off` goes back. Indicators, Claude's reads and saves all stop at the replay point, and the live price (pane, status line, watchlist), price alerts and the DaviddTech+ range wait until you are live again. Switching coin or interval ends the replay. Try: "quiz me on BTC 1h from 3 days ago".
 - **Scan** (`/lab-scan rsi < 30`, `/lab-scan close > ema 200`, `/lab-scan ema 20 crosses above ema 50 on 4h`): checks one condition on the latest candle of the chart's coin and your watchlist (up to 6), one request at a time, and names the matches with their numbers. Each side is a short word (`rsi`, `ema 50`, `cci`, `atr`, `price`) or a Pine formula like `/lab-ind plot`. Or by name: `/lab-scan oversold`, `overbought`, `uptrend`, `downtrend`, `golden cross`, `death cross` (alerts take the names too: `/lab-alert SOL oversold`). Ask Claude: "which of my coins are oversold on 1h?". It waits while bar replay is on.
 - **Claude paints anything.** Whatever Claude works out (a fair-value line, a z-score, the days a pattern showed up, the weeks of a news event) it can draw on your chart as a named layer: a line on the price or in its own pane, pins (▲ ▼ •) on candles, shaded spans. Each layer has a legend row and a CSV column, up to 8 per coin, kept for the next session. Ask: "plot a 24-candle median of the close as fair value", "pin every swing low of the last week", "take the layers off".
-- **Claude sees the chart.** The desk gives Claude four tools: `chart` (open or switch the chart, paint indicators or layers, draw marks, set alerts, save), `chart_read` (the latest values, the last candles as CSV with every indicator column, or the export code), `chart_history` and `chart_test` (below). So "what does the MACD say on BTC 4h?" reads the real numbers on your screen.
+- **Claude sees the chart.** The desk gives Claude six tools: `chart` (open or switch the chart, paint indicators or layers, draw marks, set alerts, save), `chart_read` (the latest values, the last candles as CSV with every indicator column, or the export code), `chart_history` and `chart_test` (below), `chart_alerts` and `chart_trades` (TradingView alerts and your trades, below). So "what does the MACD say on BTC 4h?" reads the real numbers on your screen.
 
 ## History lab
 
 Questions about the past, answered on your own PC from up to 5,000 closed Hyperliquid candles (1h reaches about 7 months back, 4h about 2 years, 1d all of it) and the real hourly funding. Read once per session and kept in memory, nothing written to your folder. In bar replay they only see up to the replay point.
 
-- **What happened after** (`/lab-after rsi < 30`, `/lab-after golden cross on 1d ahead 20`, or ask "what usually happens after BTC RSI drops under 30?"): every time the condition turned true (the first candle of each run, cases never overlapping), the move N candles later as a median, the middle half and the share up with its 95% range, next to the same numbers for any candle. Then the first and second half of the cases, to see if it held over time. Under 10 cases it gives no numbers, just the cases. Every case is pinned on the chart (layer "cases").
+- **What happened after** (`/lab-after rsi < 30`, `/lab-after golden cross on 1d ahead 20`, `/lab-after funding > 30`, or ask "what usually happens after BTC RSI drops under 30?"): every time the condition turned true (the first candle of each run, cases never overlapping), the move N candles later as a median, the middle half and the share up with its 95% range, next to the same numbers for any candle. Then the first and second half of the cases, to see if it held over time. Under 10 cases it gives no numbers, just the cases. Every case is pinned on the chart (layer "cases").
+- **Funding in a condition** (`/lab-after funding > 30`, `/lab-test funding < 0 hold 24`, `rsi < 30 and funding < 0`): `funding` is the rate over each candle's hours in %/yr, the way the status line shows it. It works in the history lab and the honest test (and an alert's rule), where years of it are read; a plot, scan or alert says so instead. Funding is read for up to 3 years.
 - **Moments like now** (`/lab-like`, `/lab-like ETH 4h`, or ask "when did the chart last look like this?"): the 10 past stretches shaped most like the last 20 closes, none overlapping, and what came after each. On the chart they are pinned and shaded where they happened, and what came after each is drawn to the right of the last candle, the middle path in bold (the DaviddTech+ range takes that spot when it shows).
 - **Honest test** (`/lab-test rsi < 30 exit rsi > 50`, `/lab-test ema 20 crosses above ema 50 exit ema 20 crosses below ema 50 on 4h`, `/lab-test rsi > 70 hold 12 short`, or ask "would going long at RSI under 30 have worked on SOL?"): enter when one condition holds, exit when another does or after N candles, long or short, with Hyperliquid's fee (0.045% a side unless you say `fee 0.02`) and the real funding paid or got for every hour held. It is honest in four ways:
   - the first 70% of the history is the seen part, the last 30% the unseen part, and the unseen part is reported first;
@@ -52,8 +53,30 @@ Questions about the past, answered on your own PC from up to 5,000 closed Hyperl
   - every different test you try on a coin counts (`3 tries on BTC 4h so far`), and the luck check gets stricter with each;
   - the luck check runs the same rule on the same unseen candles shuffled into random order, 199 times: "the rule did at least this well 11 of 199 times". A trade still open at the end counts at the latest close, never left out.
 
+  Then a line by market mood: every trade, seen and unseen, sorted by the mood when it opened (rising or falling: the close over or under its 200 EMA; calm or wild: the ATR under or over its own 200-candle average), with numbers only from 10 trades. If it made money in one mood only and lost in the other, by more than noise usually gives, it says the rule may just ride that mood.
+
   The unseen trades are pinned on the chart (layer "test"). It never places an order.
 - **Across coins** (`/lab-test rsi < 30 exit rsi > 50 across BTC ETH SOL`, or ask "does that hold on ETH and SOL too?"): the same test on 2 to 5 coins, a line per coin for its unseen part, then on how many it made money and how likely luck alone gives that many passing the luck check. Every coin counts as a try on that coin. The first read of a coin's funding takes a few seconds on 1h and up to half a minute on 4h or 1d; a note says so, then it is kept for the session. The fairest check of an idea: what holds on one coin only is usually luck.
+
+## TradingView alerts and your trades
+
+Your TradingView alerts land on the desk, and the desk keeps score of them live. Your own trades go on the chart next to them.
+
+- **Alerts on the desk** (`/lab-tv on`): the desk asks DaviddTech+ for your private TradingView link and shows how to paste it into an alert (Notifications tab, Webhook URL, with a short message). Any alert works: an indicator, a drawing, a strategy's order fills. Webhooks need a paid TradingView plan with 2-step sign-in on. While Claude Code is open the desk reads new alerts every minute: each one pops up once with the DaviddTech+ 5-day range for that symbol at that moment, and is pinned on the chart in orange (▲ long, ▼ short, • close) when the chart shows its coin. DaviddTech+ keeps alerts 30 days; the desk keeps up to 2,000 on your PC. No DaviddTech+ request is spent on alerts. Not sure what to put in the message? DaviddTech Aid's `alert_message` reads your Pine script and writes it for each alert.
+- **Alert scorecard** (`/lab-tv score`, `/lab-tv score rsi dip`, or ask "how did my alerts do?"): each alert's live track record on Hyperliquid candles.
+  - What came 5, 20 and 50 candles after it, from the first candle that opened after it arrived (the price you could actually have got), with funding counted. Alerts closer together than the step count once at that step.
+  - Next to any candle over the same period, so you see whether the alert did better than just being in the market.
+  - Alerts where DaviddTech+ leaned the same way vs against.
+  - If the message carries a `rule` (like `rsi < 30`), the backtest of that rule on the same coin, next to the live record. That backtest counts as a try for the honest test.
+  - Under 10 cases it gives no numbers, just the cases. Stocks and FX alerts are listed with their DaviddTech+ range, not graded.
+- **Your trades on the chart** (`/lab-trades 0x…`, or ask "what do my trades say about my habits?"): give a public Hyperliquid address and your PC reads its last 90 days of perp trades straight from Hyperliquid. The address stays on your PC and is never sent to DaviddTech.
+  - Round trips are pinned in purple: where you opened (▲ long, ▼ short) and where you closed, with the net.
+  - Net after fees, the share that made money and the median time in a trade, per coin and long vs short (no numbers under 10 trips).
+  - Next to your alerts: which ones you took (a trade their way within 3 of their candles), how late, and what the skipped ones did.
+  - `/lab-trades off` forgets the address.
+- `/lab-tv` shows the status and the latest alerts, `/lab-tv off` stops reading, `/lab-tv clear` removes the alerts kept on your PC. A renewed link stops the reading with a note; `/lab-tv on` picks up the new one.
+
+Nothing is traded from an alert: you decide and place your own orders on your own exchange.
 
 ## What it does
 
@@ -69,7 +92,7 @@ Questions about the past, answered on your own PC from up to 5,000 closed Hyperl
 - **Status line**: `Lab desk READ-ONLY · as of 14:32:05 UTC · BTC 65,137 -1.2% · funding +10.95%/yr`. It says `loading` before the first data and `stale 2m` once two refresh periods pass with no new data (one failed refresh is not enough).
 - **Stale data**: the same two-period rule adds a row under the readout (`Stale 2m · the error · retrying every 30 s`), shows `stale 2m` as the widget's second line, and adds `stale 2m` to the watchlist. Each is plain words in a grey outline, never a color, so it can't be mistaken for the orange down candles of the colorblind palette. It looks the same in light and dark mode.
 
-Nothing fetches until you run `/lab-chart` or `/lab-watch`. A watchlist you set earlier comes back at the next session start and resumes its 30 s refresh then; `/lab-watch off` stops that. Market data comes from the Hyperliquid public info API (`POST https://api.hyperliquid.xyz/info`, no key). The pane footer says so, with the time of the data: `READ-ONLY · as of 14:32:05 UTC · Market data: Hyperliquid public API` (`loading` before the first data). Under it: an `Ask about BTC` button, which puts a ready question in the prompt box ("Analyze BTC/USD with DaviddTech+ for the next 5 days at the live price 65,137 (price_now)."; press Enter to send it), and the source line.
+Nothing fetches until you run `/lab-chart`, `/lab-watch` or `/lab-tv on`. A watchlist or TradingView alerts you set earlier come back at the next session start and resume their refresh then; `/lab-watch off` and `/lab-tv off` stop that. Market data comes from the Hyperliquid public info API (`POST https://api.hyperliquid.xyz/info`, no key). The pane footer says so, with the time of the data: `READ-ONLY · as of 14:32:05 UTC · Market data: Hyperliquid public API` (`loading` before the first data). Under it: an `Ask about BTC` button, which puts a ready question in the prompt box ("Analyze BTC/USD with DaviddTech+ for the next 5 days at the live price 65,137 (price_now)."; press Enter to send it), and the source line.
 
 ## Try it / Stop it
 
@@ -82,7 +105,7 @@ Nothing fetches until you run `/lab-chart` or `/lab-watch`. A watchlist you set 
 
 **Stop it.** `/lab-chart close` closes the chart and `/lab-watch off` hides the watchlist. To remove the desk, `/plugin uninstall lab-desk@daviddtechplus`.
 
-**What stays behind.** Only a small saved note that just the desk reads: your watchlist (if you used `/lab-watch`), your indicators, layouts, marks, alerts and layers, the honest test's try count per coin, and the last DaviddTech+ range per coin (kept 6 hours, so a reopened chart doesn't ask again). It does nothing on its own. To leave nothing at all, type `/lab-chart reset` before you uninstall. No other files are written, except the `lab-charts/` files you ask for with save.
+**What stays behind.** Only a small saved note that just the desk reads: your watchlist (if you used `/lab-watch`), your TradingView alerts and link, the address you gave `/lab-trades`, your indicators, layouts, marks, alerts and layers, the honest test's try count per coin, and the last DaviddTech+ range per coin (kept 6 hours, so a reopened chart doesn't ask again). It does nothing on its own. To leave nothing at all, type `/lab-chart reset` before you uninstall. No other files are written, except the `lab-charts/` files you ask for with save.
 
 To try it for one window only from a copy of this folder, without installing: `claude --plugin-dir "<this folder>"`.
 
@@ -113,7 +136,7 @@ claude plugin test "<this folder>"
 - **Terminal indicators**: price indicators are braille dots in the cells the candles leave free, with a legend row above the chart; oscillators take 6-row panes under it (the panes give way first when the pane is short). Marks are dashed rows with their label, zones two dotted edges, notes a ▼ over the candle, fib levels dotted rows, a trend line • dots.
 - In the desktop app's small widget form, the pane shows just the coin's price, change and funding (or `stale 2m` in a grey outline).
 
-The commands are `/lab`, `/lab-chart`, `/lab-ind`, `/lab-mark`, `/lab-alert`, `/lab-scan`, `/lab-watch`, `/lab-after`, `/lab-like` and `/lab-test`, not `/lab-desk:chart`. A command a mod registers in code can't have a colon in its name.
+The commands are `/lab`, `/lab-chart`, `/lab-ind`, `/lab-mark`, `/lab-alert`, `/lab-scan`, `/lab-watch`, `/lab-after`, `/lab-like`, `/lab-test`, `/lab-tv` and `/lab-trades`, not `/lab-desk:chart`. A command a mod registers in code can't have a colon in its name.
 
 ## Roadmap
 

@@ -129,6 +129,12 @@ export type WorldOptions = {
   candles?: (coin: string) => Record<string, unknown>[]
   /** The rows fundingHistory answers for a coin from a time, or null to answer 429 (busy); [] when absent. */
   funding?: (coin: string, startTime: number) => Record<string, unknown>[] | null
+  /** What a GET of the TradingView feed answers (url with its cursor), or undefined for 404. */
+  feed?: (url: string) => { status: number; body: unknown } | undefined
+  /** The fills userFillsByTime answers for a wallet and window; [] when absent. */
+  fills?: (user: string, startTime: number, endTime: number) => Record<string, unknown>[]
+  /** What one MCP tool answers, ahead of `mcp`; null passes on to `mcp`. */
+  mcpTool?: (server: string, tool: string, args: Record<string, unknown>) => { content: { type: 'text'; text: string }[]; isError: boolean; structuredContent?: unknown } | null
 }
 
 /** The engine beneath the plugin: the info API, panes, commands, MCP, status. */
@@ -167,7 +173,12 @@ export function engine(on: On, opts: WorldOptions = {}): World {
     await opts.delay?.(body)
     const headers: Record<string, string> = { 'content-type': 'application/json' }
     if (opts.isFetchDown) return { value: { status: 503, ok: false, headers, text: 'down' } }
-    const req = JSON.parse(body) as { type: string; req?: { coin?: string }; coin?: string; startTime?: number }
+    if (e.url.includes('/tv/')) {
+      const got = opts.feed?.(e.url)
+      return { value: got ? { status: got.status, ok: got.status < 300, headers, text: JSON.stringify(got.body) } : { status: 404, ok: false, headers, text: 'Not found' } }
+    }
+    const req = JSON.parse(body) as { type: string; req?: { coin?: string }; coin?: string; startTime?: number; endTime?: number; user?: string }
+    if (req.type === 'userFillsByTime') return { value: { status: 200, ok: true, headers, text: JSON.stringify(opts.fills?.(req.user ?? '', req.startTime ?? 0, req.endTime ?? 0) ?? []) } }
     if (req.type === 'fundingHistory' && opts.funding) {
       const rows = opts.funding(req.coin ?? '', req.startTime ?? 0)
       if (rows === null) return { value: { status: 429, ok: false, headers, text: 'null' } }
@@ -205,7 +216,7 @@ export function engine(on: On, opts: WorldOptions = {}): World {
         return { value: { content: [{ type: 'text' as const, text: 'usage' }], isError: false, structuredContent: opts.usage } }
       }
     } else w.mcpCalls.push({ server: e.server, tool: e.tool, args: e.args })
-    const answer = opts.mcp?.(e.server) ?? null
+    const answer = opts.mcpTool?.(e.server, e.tool, e.args) ?? opts.mcp?.(e.server) ?? null
     if (!answer) throw new Error(`No MCP server named ${e.server}`)
     return { value: answer }
   })

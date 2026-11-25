@@ -44,9 +44,11 @@ export function expandWords(text: string): string {
 }
 
 /** "rsi < 30 on 4h" → the two sides, the comparison and the interval; or a plain error. */
-export function parseScan(raw: string): Scan | { error: string } {
-  const expanded = expandNamed(raw)
-  const name = expanded !== raw ? raw.trim().toLowerCase().replace(/\s+(?:on\s+)?(?:1m|5m|15m|1h|4h|1d|1w)$/, '').replace(/\s+/g, ' ') : undefined
+export function parseScan(raw: string, opts: { funding?: boolean } = {}): Scan | { error: string } {
+  // In the history lab, "funding > 20%" reads as %/yr, the way the status line shows it.
+  const said = opts.funding ? raw.replace(/(\d)\s*%/g, '$1') : raw
+  const expanded = expandNamed(said)
+  const name = expanded !== said ? said.trim().toLowerCase().replace(/\s+(?:on\s+)?(?:1m|5m|15m|1h|4h|1d|1w)$/, '').replace(/\s+/g, ' ') : undefined
   let text = expanded.trim()
   const usage = `Try: ${SCAN_EXAMPLES.map(x => `/lab-scan ${x}`).join(' · ')} · or by name: ${Object.keys(NAMED_SCANS).join(', ')}`
   if (text === '') return { error: usage }
@@ -62,7 +64,7 @@ export function parseScan(raw: string): Scan | { error: string } {
   const sides = [text.slice(0, m.index), text.slice(m.index + m[0].length)]
   const nodes: Node[] = []
   for (const side of sides) {
-    const n = parseFormula(expandWords(side), { allowConst: true })
+    const n = parseFormula(expandWords(side), { allowConst: true, allowFunding: opts.funding === true })
     if ('error' in n) return { error: `${n.error.replace(/^Formula: /, 'Scan: ')}` }
     nodes.push(n)
   }

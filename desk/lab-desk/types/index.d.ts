@@ -1,7 +1,16 @@
 // The values lab-desk keeps in $.state, and the market data they hold.
 
 /** One candle, numbers parsed from Hyperliquid's strings; `t` is the open time in ms. */
-export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number }
+export type Candle = {
+  t: number
+  o: number
+  h: number
+  l: number
+  c: number
+  v: number
+  /** The history lab only: funding over this candle's hours as %/yr (the hourly rate x 24 x 365), null where unread. */
+  f?: number | null
+}
 
 /** One perp's live context from metaAndAssetCtxs. `funding` is the hourly rate. */
 export type CoinCtx = {

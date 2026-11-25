@@ -18,7 +18,15 @@ export const LIKE_WINDOW = 20
 export const LIKE_COUNT = 10
 
 /** One or more scan conditions joined by "and", with the interval from any "on 4h". */
-export type Condition = { parts: Scan[]; text: string; interval: string | null; /** The person's own words, without the interval. */ said: string }
+export type Condition = {
+  parts: Scan[]
+  text: string
+  interval: string | null
+  /** The person's own words, without the interval. */
+  said: string
+  /** It reads funding (%/yr), so the candles need it attached first (withFunding). */
+  usesFunding: boolean
+}
 
 export function parseCondition(raw: string): Condition | { error: string } {
   let text = raw.trim()
@@ -33,11 +41,12 @@ export function parseCondition(raw: string): Condition | { error: string } {
   if (pieces.length > 4) return { error: 'Up to 4 parts joined by "and".' }
   const parts: Scan[] = []
   for (const p of pieces) {
-    const s = parseScan(p)
+    const s = parseScan(p, { funding: true })
     if ('error' in s) return { error: s.error.replace(/\/lab-scan /g, '') }
     parts.push(s)
   }
-  return { parts, text: parts.map(p => (p.name ? `${p.name} (${p.text})` : p.text)).join(' and '), interval, said: pieces.join(' and ') }
+  const usesFunding = parts.some(p => /\bfunding\b/.test(p.text))
+  return { parts, text: parts.map(p => (p.name ? `${p.name} (${p.text})` : p.text)).join(' and '), interval, said: pieces.join(' and '), usesFunding }
 }
 
 export function conditionWarmup(c: Condition): number {

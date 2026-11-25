@@ -143,7 +143,17 @@ export function deskCells(input: DeskCellsInput, columns: number, rows: number):
       if (!c) continue
       const y = m.dir === 'up' ? rowOf(c.l) + 1 : m.dir === 'down' ? rowOf(c.h) - 1 : rowOf(m.price)
       const x = start + i
-      if (put(x, y, m.dir === 'up' ? 0x25b2 : m.dir === 'down' ? 0x25bc : 0x2022) && m.ink) {
+      const cp = m.dir === 'up' ? 0x25b2 : m.dir === 'down' ? 0x25bc : 0x2022
+      let isPut = put(x, y, cp)
+      // A dot at a price inside its candle (a trade's close) would always be hidden: it takes that one cell instead.
+      if (!isPut && m.dir === 'dot' && x >= 0 && x < L.plot && y >= 0 && y < plan.price) {
+        const cur = main[y * columns + x]
+        if (cur) {
+          main[y * columns + x] = [cp, MARK, cur[2]]
+          isPut = true
+        }
+      }
+      if (isPut && m.ink) {
         const cur = main[y * columns + x]
         if (cur) main[y * columns + x] = [cur[0], inkNum(m.ink), cur[2]]
       }

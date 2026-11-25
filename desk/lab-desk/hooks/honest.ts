@@ -4,7 +4,9 @@
 // with one plain line on how likely luck alone is. Pure: no `$`.
 
 import type { Candle } from '../types'
-import { conditionSeries, conditionWarmup, parseCondition, pct, day } from './history'
+import { MIN_CASES, conditionSeries, conditionWarmup, parseCondition, pct, day } from './history'
+import { evalFormula, parseFormula } from './formula'
+import type { Node } from './formula'
 import type { Condition } from './history'
 
 /** Hyperliquid's base taker fee per side (0.045%); the person can give their own. */
@@ -79,6 +81,35 @@ export function fundingBetween(funding: readonly Funding[], from: number, to: nu
   let sum = 0
   for (let k = lo; k < funding.length && (funding[k] as Funding).t <= to; k++) sum += (funding[k] as Funding).rate
   return sum
+}
+
+/**
+ * The candles with funding attached for conditions that read it: the average hourly rate over each candle's hours
+ * (after its open, up to its close) as %/yr, so a candle only knows the funding of its own past. null where no rate
+ * was read (before the first row, or a gap).
+ */
+export function withFunding(candles: readonly Candle[], funding: readonly Funding[]): Candle[] {
+  const step = candles.length > 1 ? (candles[1] as Candle).t - (candles[0] as Candle).t : 3_600_000
+  let k = 0
+  return candles.map(c => {
+    while (k < funding.length && (funding[k] as Funding).t <= c.t) k++
+    let sum = 0
+    let n = 0
+    for (let q = k; q < funding.length && (funding[q] as Funding).t <= c.t + step; q++) {
+      sum += (funding[q] as Funding).rate
+      n++
+    }
+    return { ...c, f: n > 0 ? (sum / n) * 24 * 365 * 100 : null }
+  })
+}
+
+/** For a condition that reads funding: from when it was read, and a word if Hyperliquid stopped answering early. */
+export function fundingNote(candles: readonly Candle[], isComplete: boolean): string {
+  const first = candles.find(c => c.f !== null && c.f !== undefined)
+  if (!first) return 'No funding could be read for these candles, so a condition on funding never holds. Ask again in a minute.'
+  const from = first === candles[0] ? '' : `Funding (%/yr) is read from ${day(first.t)} UTC; candles before it don't count. `
+  const short = isComplete ? '' : 'Hyperliquid stopped answering before all funding was read, so the latest candles without it don\'t count. '
+  return (from + short).trim()
 }
 
 /**
@@ -195,9 +226,11 @@ export function shuffledCandles(candles: readonly Candle[], from: number, rand: 
   }
   if (from < 1 && candles[0]) out.push(candles[0])
   let prev = (out.at(-1) as Candle | undefined)?.c ?? 1
+  // Funding stays with its time, like the funding paid: only the order of the price moves is shuffled.
   moves.forEach((m, q) => {
-    const t = (candles[start + q] as Candle).t
-    out.push({ t, o: prev * m.o, h: prev * m.h, l: prev * m.l, c: prev * m.c, v: m.v })
+    const src = candles[start + q] as Candle
+    const t = src.t
+    out.push({ t, o: prev * m.o, h: prev * m.h, l: prev * m.l, c: prev * m.c, v: m.v, ...(src.f !== undefined ? { f: src.f } : {}) })
     prev = prev * m.c
   })
   return out
@@ -294,6 +327,8 @@ export type TestResult = {
   cutT: number
   /** Hyperliquid stopped answering before the funding was all read: the latest hours count none. */
   isFundingShort?: boolean
+  /** Every trade, seen and unseen, by the market's mood when it opened. */
+  moods: MoodRow[]
 }
 
 /** Where the unseen part starts: after the warm-up, the last 30% of the candles. */
@@ -303,6 +338,61 @@ export function cutIndex(spec: TestSpec, length: number): number {
 }
 
 /** The whole honest test: seen and unseen parts, the nearby check on the seen part, the try count given. */
+const share = (x: number) => `${Math.round(x * 100)}%`
+
+/** One market mood and the trades that opened in it. */
+export type MoodRow = { name: string; what: string; n: number; avg: number; win: number; sd: number }
+
+const formulaOf = (text: string): Node => parseFormula(text) as Node
+
+/**
+ * The trades by the market's mood on the candle each opened at, read from that candle and the ones before only:
+ * rising or falling (the close over or under its 200 EMA), calm or wild (the ATR, as a share of price, under or over
+ * its own 200-candle average). A trade before either has settled is in no mood.
+ */
+export function moodSplit(trades: readonly Trade[], candles: readonly Candle[]): MoodRow[] {
+  const ema = evalFormula(formulaOf('ta.ema(close, 200)'), candles)
+  const vol = evalFormula(formulaOf('ta.atr(14) / close'), candles)
+  const usual = evalFormula(formulaOf('ta.sma(ta.atr(14) / close, 200)'), candles)
+  const close = (i: number) => (candles[i] as Candle).c
+  const both = (a: number | null | undefined, b: number | null | undefined, f: (x: number, y: number) => boolean) => (a === null || a === undefined || b === null || b === undefined ? false : f(a, b))
+  const moods: { name: string; what: string; is: (i: number) => boolean }[] = [
+    { name: 'rising', what: 'close over its 200 EMA', is: i => both(close(i), ema[i], (x, y) => x > y) },
+    { name: 'falling', what: 'close under it', is: i => both(close(i), ema[i], (x, y) => x <= y) },
+    { name: 'calm', what: 'ATR under its 200-candle average', is: i => both(vol[i], usual[i], (x, y) => x <= y) },
+    { name: 'wild', what: 'ATR over it', is: i => both(vol[i], usual[i], (x, y) => x > y) },
+  ]
+  return moods.map(m => {
+    const rets = trades.filter(t => m.is(t.i)).map(t => t.ret)
+    const n = rets.length
+    const avg = n ? rets.reduce((a, b) => a + b, 0) / n : 0
+    const sd = n > 1 ? Math.sqrt(rets.reduce((a, r) => a + (r - avg) ** 2, 0) / (n - 1)) : 0
+    return { name: m.name, what: m.what, n, avg, win: n ? rets.filter(r => r > 0).length / n : 0, sd }
+  })
+}
+
+/**
+ * The mood of a pair the rule made money in, when the other side lost and the gap between them is over twice its
+ * standard error (what noise alone rarely gives); null otherwise, so a small wobble around zero is never a verdict.
+ */
+export function moodCarries(a: MoodRow, b: MoodRow): MoodRow | null {
+  if (a.n < MIN_CASES || b.n < MIN_CASES) return null
+  const [good, bad] = a.avg >= b.avg ? [a, b] : [b, a]
+  if (!(good.avg > 0 && bad.avg < 0)) return null
+  const se = Math.sqrt(good.sd ** 2 / good.n + bad.sd ** 2 / bad.n)
+  return good.avg - bad.avg > 2 * se ? good : null
+}
+
+/** The moods in a line (no numbers under MIN_CASES trades), and a plain word when one mood clearly carries the result. */
+export function moodLine(moods: readonly MoodRow[], all: number): string | null {
+  if (all < MIN_CASES || moods.every(m => m.n === 0)) return null
+  const row = (m: MoodRow) => `${m.name} (${m.what}) ${m.n} trade${m.n === 1 ? '' : 's'}${m.n < MIN_CASES ? ': under 10, no numbers' : `, average ${pct(m.avg)}, ${share(m.win)} won`}`
+  const parts = [`Market mood (${all} trades, seen and unseen, by the mood when each opened; one before the 200-candle averages settle has none): ${moods.map(row).join(' · ')}.`]
+  const carry = [moods[0] && moods[1] ? moodCarries(moods[0], moods[1]) : null, moods[2] && moods[3] ? moodCarries(moods[2], moods[3]) : null].filter((m): m is MoodRow => m !== null)
+  if (carry.length > 0) parts.push(`It made money only while the market was ${carry.map(m => m.name).join(', and only while it was ')}, by more than noise usually gives: it may just ride ${carry.length > 1 ? 'those moods' : 'that mood'}.`)
+  return parts.join(' ')
+}
+
 export function honestTest(spec: TestSpec, raw: { enter: string; exit?: string }, candles: readonly Candle[], funding: readonly Funding[], tries: number, runs = SHUFFLES): TestResult {
   const warm = Math.max(conditionWarmup(spec.enter), spec.exit ? conditionWarmup(spec.exit) : 0)
   const cut = cutIndex(spec, candles.length)
@@ -323,10 +413,10 @@ export function honestTest(spec: TestSpec, raw: { enter: string; exit?: string }
     from: (candles[warm] as Candle | undefined)?.t ?? 0,
     to: candles.at(-1)?.t ?? 0,
     cutT: (candles[cut] as Candle | undefined)?.t ?? 0,
+    moods: moodSplit([...seenTrades, ...unseenTrades], candles),
   }
 }
 
-const share = (x: number) => `${Math.round(x * 100)}%`
 
 function partLine(name: string, r: PartResult, side: 'long' | 'short'): string {
   if (r.n === 0) return `${name}: no trades.`
@@ -365,6 +455,8 @@ export function testText(r: TestResult, coin: string, interval: string, onChart:
   }
   if (r.near.tried > 0)
     lines.push(`Nearby settings (seen part, each number moved 10-20%): ${r.near.positive} of ${r.near.tried} made money, from ${pct(r.near.worst, 1)} to ${pct(r.near.best, 1)}${r.near.positive / r.near.tried < 0.5 ? ': most neighbours lose, so this setting looks tuned to noise' : ': it holds up around this setting'}.`)
+  const mood = moodLine(r.moods, r.seen.n + r.unseen.n)
+  if (mood) lines.push(mood)
   lines.push(luckLine(r, `${coin} ${interval}`))
   if (onChart > 0) lines.push(`${onChart} unseen trade${onChart === 1 ? '' : 's'} pinned on the chart (layer "test").`)
   return lines.join('\n')

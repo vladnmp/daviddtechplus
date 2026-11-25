@@ -1,7 +1,7 @@
 {
   "name": "lab-desk",
-  "version": "1.1.0",
-  "description": "The Lab desk, read-only: a live Hyperliquid chart your AI can see and paint on, a history lab (what happened after, moments like now, an honest test with fees, funding and a luck check), a watchlist above the prompt, price and funding in the status line, and the DaviddTech+ forecast range. No keys, no orders.",
+  "version": "1.2.0",
+  "description": "The Lab desk, read-only: a live Hyperliquid chart your AI can see and paint on, a history lab (what happened after, moments like now, an honest test with fees, funding and a luck check), your TradingView alerts with a live scorecard, your own trades on the chart from a public address read on your PC, a watchlist above the prompt, price and funding in the status line, and the DaviddTech+ forecast range. No keys, no orders.",
   "author": {
     "name": "DaviddTech"
   },

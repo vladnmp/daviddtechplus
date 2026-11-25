@@ -66,7 +66,7 @@ function tokens(text: string): Tok[] | { error: string } {
 class Bad extends Error {}
 
 /** Reads a formula into a tree, or says in plain words what is wrong. */
-export function parseFormula(raw: string, opts: { allowConst?: boolean } = {}): Node | { error: string } {
+export function parseFormula(raw: string, opts: { allowConst?: boolean; allowFunding?: boolean } = {}): Node | { error: string } {
   const text = raw.trim().toLowerCase()
   if (text === '') return { error: `Write a formula after plot. ${HINT}` }
   if (text.length > MAX_TEXT) return { error: `Formulas are ${MAX_TEXT} characters at most.` }
@@ -143,6 +143,10 @@ export function parseFormula(raw: string, opts: { allowConst?: boolean } = {}): 
         return { t: 'call', fn: tok.v, args }
       }
       if ((SERIES as readonly string[]).includes(tok.v)) return { t: 'var', name: tok.v }
+      if (tok.v === 'funding') {
+        if (!opts.allowFunding) throw new Bad('"funding" works in the history lab (/lab-after, /lab-test), where years of it are read; not in a plot, scan or alert.')
+        return { t: 'var', name: 'funding' }
+      }
       throw new Bad(`"${tok.v}" is not a series here. ${HINT}`)
     }
     throw new Bad(`"${tok.v}" is out of place.`)
@@ -227,7 +231,7 @@ function dim(n: Node): Dim {
     case 'num':
       return { k: 'const', v: n.v }
     case 'var':
-      return n.name === 'volume' ? { k: 'other' } : { k: 'level', w: 1 }
+      return n.name === 'volume' || n.name === 'funding' ? { k: 'other' } : { k: 'level', w: 1 }
     case 'neg': {
       const a = dim(n.a)
       return a.k === 'level' ? { k: 'level', w: -a.w } : a.k === 'const' ? { k: 'const', v: -a.v } : a
@@ -303,6 +307,8 @@ function seriesOf(name: string, c: readonly Candle[]): Num[] {
       return c.map(k => k.l)
     case 'volume':
       return c.map(k => k.v)
+    case 'funding':
+      return c.map(k => k.f ?? null)
     case 'hl2':
       return c.map(k => (k.h + k.l) / 2)
     case 'hlc3':

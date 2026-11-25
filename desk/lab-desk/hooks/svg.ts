@@ -525,20 +525,33 @@ export function deskSvgAt(input: DeskInput, interval: string, coin: string, fanL
       const x = X(i)
       const pc = m.ink ?? th.bright
       let ly: number
+      let py: number
       if (m.dir === 'up') {
         const y = Y(c.l) + 5
         out.push(`<path d="M${f1(x)} ${f1(y)}l4 6h-8Z" fill="${pc}"/>`)
         ly = y + 16
+        py = y + 3
       } else if (m.dir === 'down') {
         const y = Y(c.h) - 5
         out.push(`<path d="M${f1(x)} ${f1(y)}l4 -6h-8Z" fill="${pc}"/>`)
         ly = y - 9
+        py = y - 3
       } else {
         const y = Y(m.price)
         out.push(`<circle cx="${f1(x)}" cy="${f1(y)}" r="3" fill="${pc}" stroke="${th.panel}" stroke-width="1"/>`)
         ly = y - 7
+        py = y
       }
-      if (m.label) out.push(`<text class="t" x="${f1(x)}" y="${f1(ly)}" fill="${pc}" font-size="10" text-anchor="middle">${esc(m.label)}</text>`)
+      // A label that would run into the legend above or the volume below sits beside its pin instead, on its left
+      // near the price scale; it never crosses the scale or the left edge, and a thin halo keeps it clear of wicks.
+      if (m.label) {
+        const isBeside = ly - 9 < pTop || ly > pBot
+        const w = m.label.length * 6
+        const isLeft = isBeside && x + 7 + w > plotRight
+        const tx = isBeside ? (isLeft ? x - 7 : x + 7) : Math.min(plotRight - w / 2 - 2, Math.max(w / 2 + 2, x))
+        const anchor = isBeside ? (isLeft ? 'end' : 'start') : 'middle'
+        out.push(`<text class="t" x="${f1(tx)}" y="${f1(isBeside ? py + 3.5 : ly)}" fill="${pc}" font-size="10" text-anchor="${anchor}" stroke="${th.panel}" stroke-width="3" stroke-linejoin="round" paint-order="stroke">${esc(m.label)}</text>`)
+      }
     } else if (m.kind === 'note' && m.t !== undefined) {
       const i = candles.findIndex(c => c.t === m.t)
       if (i < 0) continue

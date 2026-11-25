@@ -2,7 +2,7 @@
 // pane (/lab-chart), a watchlist band above the prompt (/lab-watch), the chart
 // coin's price and funding in the status line, and the DaviddTech+ forecast
 // range drawn to the right of the last candle. Public market data only:
-// nothing here places orders or reads keys or wallets.
+// nothing here places orders or reads keys; a public address given to /lab-trades is read from Hyperliquid only.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
@@ -54,8 +54,12 @@ import { MAX_ALERTS, MAX_WHEN, alertText, hitAlerts, hitText, parseAlert, parseW
 import { deskAlt, deskSvg, shareCard } from './svg'
 import { addLayers, layerGhost, layerMarks, layerStudies, layersFromStore, layersLine, removeLayers } from './layers'
 import { AHEAD_DEFAULT, AHEAD_MAX, LIKE_WINDOW, afterStudy, afterText, likeNow, likeText, parseCondition, pct } from './history'
-import { FEE_DEFAULT, MAX_TRIES_KEPT, MIN_UNSEEN, SEEN_SHARE, acrossText, cutIndex, honestTest, parseTest, specKey, testText } from './honest'
+import { FEE_DEFAULT, MAX_TRIES_KEPT, MIN_UNSEEN, SEEN_SHARE, acrossText, cutIndex, fundingNote, honestTest, parseTest, specKey, testText, withFunding } from './honest'
 import type { CoinRow, Funding, TestSpec } from './honest'
+import { ALERT_INK, ALERT_LAYER, FEED_MS, alertCoin, alertInterval, alertPins, backtestOf, feedQuery, feedUrlOf, groupAlerts, keepAlerts, lastId, listText as tvListText, parseFeed, scoreGroup, scoreRow, scoreText, toastText, ungradedLine } from './live'
+import type { Score, TvAlert } from './live'
+import { FILLS_DAYS, TRADE_INK, TRADE_LAYER, alertHabits, fillsRequest, habitsText, keepFills, moveAfter, parseFills, roundTrips, shortWallet, tripList, tripPins, tripsText, walletOf } from './fills'
+import type { Fill } from './fills'
 import type { Theme } from './svg'
 import {
   FORECAST_TTL_MS,
@@ -384,7 +388,7 @@ const HISTORY_TOOL = {
     type: 'object',
     properties: {
       mode: { type: 'string', enum: ['after', 'like'] },
-      when: { type: 'string', description: 'For "after": the condition in scan words, e.g. "rsi < 30", "close crosses above ema 200", "rsi < 30 and close > ema 200", optional "on 4h"' },
+      when: { type: 'string', description: 'For "after": the condition in scan words, e.g. "rsi < 30", "close crosses above ema 200", "rsi < 30 and close > ema 200", "funding > 20" (funding in %/yr, like the status line), optional "on 4h"' },
       coin: { type: 'string', description: 'Defaults to the chart coin' },
       interval: { type: 'string', enum: ['1m', '5m', '15m', '1h', '4h', '1d', '1w'], description: 'Defaults to the condition\'s "on 4h", else the chart\'s. 1h reaches about 7 months back, 4h about 2 years, 1d all of it' },
       ahead: { type: 'number', description: 'Candles to look ahead, default 10' },
@@ -406,7 +410,7 @@ const TEST_TOOL = {
   inputSchema: {
     type: 'object',
     properties: {
-      enter: { type: 'string', description: 'When to enter, in scan words: "rsi < 30", "ema 20 crosses above ema 50", "close > ema 200 and rsi < 40"' },
+      enter: { type: 'string', description: 'When to enter, in scan words: "rsi < 30", "ema 20 crosses above ema 50", "close > ema 200 and rsi < 40", "funding < 0" (funding in %/yr)' },
       exit: { type: 'string', description: 'When to exit, same words (optional when hold is given)' },
       hold: { type: 'number', description: 'Exit after this many candles at most (default 10 when there is no exit condition)' },
       side: { type: 'string', enum: ['long', 'short'] },
@@ -570,8 +574,15 @@ async function runAfter($: EngineInterface, input: { when?: unknown; coin?: unkn
   const { coin, interval } = target
   const a = Number(input.ahead)
   const ahead = Number.isFinite(a) && a >= 1 ? Math.min(AHEAD_MAX, Math.round(a)) : AHEAD_DEFAULT
-  const candles = await historyCandles($, coin, interval)
-  if (!candles || candles.length < 50) return `Could not read ${coin} ${interval} history from Hyperliquid just now; try again in a minute.`
+  const read = await historyCandles($, coin, interval)
+  if (!read || read.length < 50) return `Could not read ${coin} ${interval} history from Hyperliquid just now; try again in a minute.`
+  let candles = read
+  let fundLine = ''
+  if (cond.usesFunding) {
+    const rows = await fundingRows($, coin, Math.max((read[0] as Candle).t, (await $.clock.now()) - 3 * 365 * 86_400_000))
+    candles = withFunding(read, rows.rows)
+    fundLine = fundingNote(candles, rows.isComplete)
+  }
   const study = afterStudy(cond, candles, ahead)
   let onChart = 0
   if (input.mark !== false && study.cases.length > 0) {
@@ -579,7 +590,7 @@ async function runAfter($: EngineInterface, input: { when?: unknown; coin?: unkn
     onChart = await pinLayer($, coin, interval, 'cases', { pins, color: '#ff9800' })
   }
   const next = `Next: /${TEST_COMMAND} ${cond.said} hold ${ahead} turns it into a test with fees and funding, or /${LIKE_COMMAND} finds moments like now.`
-  return `${afterText(cond, coin, interval, ahead, study, onChart)}\n${next}\n${DATA_LINE}`
+  return `${afterText(cond, coin, interval, ahead, study, onChart)}\n${fundLine ? `${fundLine}\n` : ''}${next}\n${DATA_LINE}`
 }
 
 /** The next shorter interval: more candles over the same months. */
@@ -682,8 +693,11 @@ async function runTestTool($: EngineInterface, input: { enter?: unknown; exit?: 
   if (candles.length < 200) return `Test: ${coin} ${interval} has only ${candles.length} closed candles so far, too few for seen and unseen parts (200 needed). Next: a shorter interval has more candles, e.g. on ${SHORTER[interval] ?? '1h'}.`
   const read = await fundingRows($, coin, Math.max((candles[0] as Candle).t, (await $.clock.now()) - 3 * 365 * 86_400_000))
   const tries = await countTry($, `${coin} ${interval}`, specKey(spec))
-  const result = honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, candles, read.rows, tries)
+  const usesFunding = spec.enter.usesFunding || spec.exit?.usesFunding === true
+  const tested = usesFunding ? withFunding(candles, read.rows) : candles
+  const result = honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, tested, read.rows, tries)
   result.isFundingShort = !read.isComplete
+  const fundLine = usesFunding ? fundingNote(tested, true) : ''
   let onChart = 0
   if (input.mark !== false && result.unseen.n > 0) {
     const trades = result.unseen.trades
@@ -695,7 +709,7 @@ async function runTestTool($: EngineInterface, input: { enter?: unknown; exit?: 
     result.unseen.n < MIN_UNSEEN
       ? `Next: ask Claude "loosen the entry a little so the test has more unseen trades" (each change counts as a try).`
       : `Next: the fairest check is other coins: /${TEST_COMMAND} ${testWords(spec)} across ${coin === 'BTC' ? 'ETH SOL' : `BTC ${coin === 'ETH' ? 'SOL' : 'ETH'}`} on ${interval} (each coin counts as a try).`
-  return `${testText(result, coin, interval, onChart)}\n${next}\n${DATA_LINE}`
+  return `${testText(result, coin, interval, onChart)}\n${fundLine ? `${fundLine}\n` : ''}${next}\n${DATA_LINE}`
 }
 
 /** The same test on 2 to 5 coins: each coin's unseen part, how many held, and how likely luck gives that. */
@@ -731,7 +745,8 @@ async function runAcross($: EngineInterface, spec: TestSpec, input: { enter?: un
         continue
       }
       const tries = await countTry($, `${coin} ${interval}`, specKey(spec))
-      rows.push({ coin, r: honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, candles, read.rows, tries) })
+      const tested = spec.enter.usesFunding || spec.exit?.usesFunding === true ? withFunding(candles, read.rows) : candles
+      rows.push({ coin, r: honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, tested, read.rows, tries) })
     }
   }
   const more = left.length > 0 ? `\n${left.join(', ')} left out: ${ACROSS_MAX} coins at most in one test.` : ''
@@ -1373,6 +1388,308 @@ function startBand($: EngineInterface) {
   void bandTick($)
 }
 
+// TradingView alerts and your trades. The alerts come from DaviddTech+ (each one the person's TradingView sent to
+// their private link), are kept on this PC and graded here; a wallet's fills come straight from Hyperliquid, so the
+// address never goes to DaviddTech. Nothing here places or sends an order.
+export const TV_COMMAND = 'lab-tv'
+export const TRADES_COMMAND = 'lab-trades'
+export const ALERTS_TOOL_NAME = 'mcp__lab-desk__chart_alerts'
+export const TRADES_TOOL_NAME = 'mcp__lab-desk__chart_trades'
+/** Groups scored in one summary, each reading its coin's history and funding. */
+const SCORE_GROUPS = 6
+/** Fill pages read at most (2000 fills each). */
+const FILL_PAGES = 5
+
+const tv: { feed: string | null; kept: TvAlert[]; timer: Timer | null; busy: boolean; isGone: boolean; wallet: string | null; fills: Fill[]; fillsAt: number } = {
+  feed: null,
+  kept: [],
+  timer: null,
+  busy: false,
+  isGone: false,
+  wallet: null,
+  fills: [],
+  fillsAt: 0,
+}
+
+const ALERTS_TOOL = {
+  name: 'chart_alerts',
+  description:
+    "The person's TradingView alerts, as they reached the Lab desk through DaviddTech+ (set up with /lab-tv on). " +
+    'action "list": the latest alerts, each with the DaviddTech+ 5-day range for that symbol at that moment when one was ready. ' +
+    'action "score": the live track record of each alert: what came 5, 20 and 50 candles after it (from the first candle opening after it arrived, funding counted, no fees) next to any candle, ' +
+    "the alerts where DaviddTech+ leaned the same way against the rest, and the backtest of the alert's rule when it sent one. Under 10 cases there are no numbers: say so plainly. " +
+    'Only Hyperliquid perps are graded; stocks and currency pairs are listed with their DaviddTech+ range. Read-only: it never places or sends orders.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'score'] },
+      name: { type: 'string', description: 'For "score": one alert by name (part of it is enough); all of them when left out' },
+      count: { type: 'number', description: 'For "list": how many, default 10, up to 50' },
+    },
+  },
+  isDeferred: false,
+} as const
+const TRADES_TOOL = {
+  name: 'chart_trades',
+  description:
+    "The person's own Hyperliquid trades over the last 90 days, from the public wallet address they set with /lab-trades (read straight from Hyperliquid by their PC; the address never goes to DaviddTech): " +
+    'round trips pinned on the chart, net after fees, the share that made money, how long trades ran, per coin and long vs short, and next to their TradingView alerts: alerts taken vs skipped, how late, and what the skipped ones did. ' +
+    'Under 10 cases there are no numbers. Say what the habits show in plain words; never tell them what to trade. Read-only.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      wallet: { type: 'string', description: 'A 0x address to use instead of the one set with /lab-trades (kept on this PC)' },
+    },
+  },
+  isDeferred: false,
+} as const
+
+async function tvSave($: EngineInterface): Promise<void> {
+  await $.store.set('tvAlerts', tv.kept).catch(() => undefined)
+  await $.store.set('tvFeed', tv.feed ?? '').catch(() => undefined)
+}
+
+function tvStop() {
+  tv.timer?.cancel()
+  tv.timer = null
+}
+
+function tvStart($: EngineInterface) {
+  tvStop()
+  if (tv.feed) tv.timer = $.clock.every(FEED_MS, () => void tvPoll($))
+}
+
+/** The feed address without its private part, for the screen. */
+const feedShown = (url: string) => url.replace(/\/tv\/([0-9a-f]{20})[A-Za-z0-9_-]{24}/, '/tv/$1…')
+
+/** One read of the feed: new alerts kept, said (toast and notification) and pinned on the chart when it shows their coin. */
+async function tvPoll($: EngineInterface, quiet = false): Promise<number> {
+  if (!tv.feed || tv.busy) return 0
+  tv.busy = true
+  try {
+    const r = await $.http.fetch(feedQuery(tv.feed, lastId(tv.kept))).catch(() => null)
+    if (!r) return 0
+    if (r.status === 404) {
+      // The link was renewed (tv_new_link): this feed is gone for good.
+      if (!tv.isGone) $.ui.toast(`Your TradingView link was renewed, so the desk stopped reading the old one. /${TV_COMMAND} on picks up the new one.`)
+      tv.isGone = true
+      tvStop()
+      return 0
+    }
+    if (!r.ok) return 0
+    let raw: unknown = null
+    try {
+      raw = JSON.parse(r.text) as unknown
+    } catch {
+      return 0
+    }
+    const fresh = parseFeed(raw).filter(a => !tv.kept.some(k => k.id === a.id))
+    if (fresh.length === 0) return 0
+    tv.kept = keepAlerts(tv.kept, fresh)
+    await tvSave($)
+    if (!quiet) {
+      for (const a of fresh.slice(-3)) {
+        $.ui.toast(toastText(a))
+        await $.ui.notify(toastText(a), { title: 'TradingView alert' }).catch(() => undefined)
+      }
+      if (fresh.length > 3) $.ui.toast(`${fresh.length - 3} more TradingView alerts came in: /${TV_COMMAND} lists them.`)
+    }
+    const view = await read($, chart)
+    const m = await read($, market)
+    if (view && fresh.some(a => alertCoin(a, m) === view.coin && alertInterval(a) === view.interval)) await tvPins($, view.coin, view.interval)
+    return fresh.length
+  } finally {
+    tv.busy = false
+  }
+}
+
+/** The alert pins for this coin and interval, as the "tv alerts" layer. */
+async function tvPins($: EngineInterface, coin: string, interval: string): Promise<number> {
+  const pins = alertPins(tv.kept, coin, interval, await read($, market))
+  if (pins.length === 0) return 0
+  return pinLayer($, coin, interval, ALERT_LAYER, { pins: pins.map(p => ({ time: p.t, dir: p.dir, ...(p.price ? { price: p.price } : {}), label: p.label })), color: ALERT_INK })
+}
+
+/** The person's DaviddTech+ alert link, asked of DaviddTech+ (free: no daily request). */
+async function tvLinkFromDplus($: EngineInterface): Promise<{ feed: string; webhook: string; message: string; strategy: string } | { error: string }> {
+  const tools = await $.tool.list().catch(() => [])
+  for (const server of serverCandidates(tools)) {
+    let answer: Awaited<ReturnType<EngineInterface['mcp']['call']>>
+    try {
+      answer = await $.mcp.call(server, 'tv_alerts', { action: 'link' })
+    } catch {
+      continue
+    }
+    if (answer.isError) continue
+    const s = (answer.structuredContent ?? {}) as Record<string, unknown>
+    if (typeof s.feed_url === 'string' && typeof s.webhook_url === 'string') return { feed: s.feed_url, webhook: s.webhook_url, message: String(s.message ?? ''), strategy: String(s.strategy_message ?? '') }
+  }
+  return { error: `DaviddTech+ did not answer with a TradingView link. Connect DaviddTech+ (davidd.link/daviddtechplus); if your AI already gave you the link, paste it: /${TV_COMMAND} link <link>.` }
+}
+
+async function tvOn($: EngineInterface, link: string | null): Promise<string> {
+  let feed = link ? feedUrlOf(link) : null
+  if (link && !feed) return `That isn't a DaviddTech+ TradingView link. It looks like https://…modal.run/tv/ and 44 letters and digits. /${TV_COMMAND} on asks DaviddTech+ for it.`
+  let setup = ''
+  if (!feed) {
+    const got = await tvLinkFromDplus($)
+    if ('error' in got) return got.error
+    feed = got.feed
+    setup = [
+      'In TradingView: create the alert, open Notifications, tick Webhook URL and paste this link (private, keep it to yourself):',
+      got.webhook,
+      "Then paste this into the alert's Message box (change the name, and long to short when it fits):",
+      got.message,
+      `For a strategy alert: ${got.strategy}`,
+      'Webhooks need a paid TradingView plan with 2-step sign-in on.',
+    ].join('\n')
+  }
+  tv.feed = feed
+  tv.isGone = false
+  await tvSave($)
+  tvStart($)
+  const n = await tvPoll($, true)
+  return [
+    `TradingView alerts on: the desk reads them every minute while Claude Code is open, says each one, and pins it on the chart.${n ? ` ${n} alert${n === 1 ? '' : 's'} from the last 30 days came in.` : ''}`,
+    setup,
+    `Next: once a few have fired, /${TV_COMMAND} score shows what came after each.`,
+  ]
+    .filter(x => x !== '')
+    .join('\n')
+}
+
+/** The scorecard: every alert group graded on its coin's closed candles and funding; one group in full, or a row each. */
+async function tvScore($: EngineInterface, name: string): Promise<string> {
+  if (tv.kept.length === 0) return `No TradingView alerts yet. /${TV_COMMAND} on sets them up.`
+  const m = await marketNow($).catch(() => null)
+  const all = groupAlerts(tv.kept, m)
+  const want = name.trim().toLowerCase()
+  const groups = (want ? all.filter(g => g.name.toLowerCase().includes(want)) : all).filter(g => g.coin !== null).slice(0, SCORE_GROUPS)
+  if (groups.length === 0) return want ? `No graded alert named like "${name}". /${TV_COMMAND} lists the alerts.` : (ungradedLine(all) ?? 'Nothing to grade yet.')
+  const scores: Score[] = []
+  for (const g of groups) {
+    const candles = await historyCandles($, g.coin as string, g.interval)
+    if (!candles || candles.length < 60) continue
+    const first = g.alerts[0]?.at ?? 0
+    const funding = (await fundingRows($, g.coin as string, first - 7 * 86_400_000, true)).rows
+    const sc = scoreGroup(g, candles, funding)
+    if (g.rule && groups.length === 1) {
+      // A rule on funding needs it over all the candles, not just since the first alert.
+      const ruled = /\bfunding\b/i.test(g.rule) ? withFunding(candles, (await fundingRows($, g.coin as string, (candles[0] as Candle).t, true)).rows) : candles
+      sc.backtest = backtestOf(g.rule, ruled, 20, g.side)
+      if (sc.backtest) await countTry($, `${g.coin} ${g.interval}`, `alert rule: ${g.rule}`)
+    }
+    scores.push(sc)
+  }
+  if (scores.length === 0) return `Could not read the history from Hyperliquid just now; try again in a minute.\n${DATA_LINE}`
+  const off = ungradedLine(all)
+  const body =
+    scores.length === 1
+      ? scoreText(scores[0] as Score)
+      : ["Your TradingView alerts, live (20 candles on, in each alert's direction, funding counted, no fees):", ...scores.map(s => `- ${scoreRow(s)}`)].join('\n')
+  const top = scores[0]?.group
+  const next =
+    scores.length === 1
+      ? `Next: /${AFTER_COMMAND} ${top?.rule ?? 'rsi < 30'} shows the same rule over years of candles.`
+      : `Next: /${TV_COMMAND} score ${top?.name ?? ''} shows one alert in full.`
+  return [body, off, next, DATA_LINE].filter((x): x is string => !!x).join('\n')
+}
+
+function tvStatus(): string {
+  const head = tv.feed
+    ? `TradingView alerts: on${tv.isGone ? ` (the link was renewed: /${TV_COMMAND} on picks up the new one)` : ''}, reading ${feedShown(tv.feed)} every minute.`
+    : `TradingView alerts: off. /${TV_COMMAND} on sets them up through DaviddTech+.`
+  const usage = `/${TV_COMMAND} on · /${TV_COMMAND} link <link> · /${TV_COMMAND} score [name] · /${TV_COMMAND} off · /${TV_COMMAND} clear`
+  return [head, `${tv.kept.length} kept on this PC.`, tvListText(tv.kept, 8), usage].join('\n')
+}
+
+async function tvAlertsTool($: EngineInterface, input: { action?: unknown; name?: unknown; count?: unknown }): Promise<string> {
+  if (input.action === 'score') return tvScore($, typeof input.name === 'string' ? input.name : '')
+  const n = Number(input.count)
+  const count = Number.isFinite(n) && n >= 1 ? Math.min(50, Math.round(n)) : 10
+  if (tv.feed) await tvPoll($, true)
+  const off = ungradedLine(groupAlerts(tv.kept, await read($, market)))
+  return [
+    tv.feed ? `TradingView alerts (${tv.kept.length} kept):` : `TradingView alerts are off (/${TV_COMMAND} on).`,
+    tvListText(tv.kept, count),
+    off,
+    'Next: ask "how did my alerts do?" for the scorecard.',
+  ]
+    .filter((x): x is string => !!x)
+    .join('\n')
+}
+
+/** The wallet's perp fills over the last FILLS_DAYS days, in windows of 2000. */
+async function readFills($: EngineInterface, wallet: string): Promise<Fill[] | null> {
+  const now = await $.clock.now()
+  let start = now - FILLS_DAYS * 86_400_000
+  let got: Fill[] = []
+  for (let page = 0; page < FILL_PAGES; page++) {
+    const raw = await post($, JSON.stringify(fillsRequest(wallet, start, now))).catch(() => null)
+    if (!Array.isArray(raw)) return page === 0 ? null : got
+    got = keepFills(got, parseFills(raw))
+    if (raw.length < 2000) break
+    const last = Math.max(...(raw as { time?: unknown }[]).map(x => Number(x.time)).filter(Number.isFinite))
+    if (!Number.isFinite(last) || last <= start) break
+    start = last + 1
+  }
+  return got
+}
+
+async function tradesRun($: EngineInterface, wallet: string): Promise<string> {
+  const now = await $.clock.now()
+  if (tv.wallet !== wallet || now - tv.fillsAt > 60_000) {
+    const fills = await readFills($, wallet)
+    if (!fills) return `Could not read the trades from Hyperliquid just now; try again in a minute.\n${DATA_LINE}`
+    tv.wallet = wallet
+    tv.fills = fills
+    tv.fillsAt = now
+  }
+  const trips = roundTrips(tv.fills)
+  if (trips.length === 0) return `No perp trades for ${shortWallet(wallet)} in the last ${FILLS_DAYS} days. A vault or sub-account has its own address.\n${DATA_LINE}`
+  // Pins on the chart's coin when it was traded, else on the coin traded most.
+  const view = await read($, chart)
+  const counts = new Map<string, number>()
+  for (const t of trips) counts.set(t.coin, (counts.get(t.coin) ?? 0) + 1)
+  const coin = view && counts.has(view.coin) ? view.coin : ([...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? trips[0]?.coin ?? 'BTC')
+  const interval = view?.interval ?? '1h'
+  const pins = tripPins(trips, coin)
+  const onChart = pins.length
+    ? await pinLayer($, coin, interval, TRADE_LAYER, { pins: pins.map(p => ({ time: p.t, dir: p.dir, ...(p.price ? { price: p.price } : {}), label: p.label })), color: TRADE_INK })
+    : 0
+  const m = await read($, market)
+  const habits = alertHabits(tv.kept, trips, a => alertCoin(a, m))
+  // The 20-candle move after each alert, from the history read once per coin and interval.
+  const candlesOf = new Map<string, Candle[] | null>()
+  for (const h of habits.slice(-200)) {
+    const c = alertCoin(h.alert, m)
+    const key = `${c} ${alertInterval(h.alert)}`
+    if (c && !candlesOf.has(key) && candlesOf.size < SCORE_GROUPS) candlesOf.set(key, await historyCandles($, c, alertInterval(h.alert)))
+  }
+  const moveOf = (a: TvAlert) => {
+    const cs = candlesOf.get(`${alertCoin(a, m)} ${alertInterval(a)}`)
+    return cs ? moveAfter(a, cs) : null
+  }
+  return [
+    tripsText(trips, wallet, FILLS_DAYS),
+    'Latest:',
+    tripList(trips),
+    `Pinned on ${coin} ${interval} in purple: ${onChart} on the candles shown (▲ long opened, ▼ short opened, • closed).`,
+    tv.kept.length > 0 ? habitsText(habits, moveOf) : `With TradingView alerts on (/${TV_COMMAND} on), this also shows which alerts you took, how late, and what the skipped ones did.`,
+    'Next: ask "what do my trades say about my habits?"',
+    DATA_LINE,
+  ].join('\n')
+}
+
+async function tradesTool($: EngineInterface, input: { wallet?: unknown }): Promise<string> {
+  const given = typeof input.wallet === 'string' ? walletOf(input.wallet) : null
+  if (typeof input.wallet === 'string' && input.wallet.trim() !== '' && !given) return 'That is not a wallet address (0x and 40 letters or digits).'
+  const wallet = given ?? tv.wallet
+  if (!wallet) return `No wallet set. /${TRADES_COMMAND} 0x… sets the public address to read (kept on this PC, never sent to DaviddTech).`
+  if (given && given !== tv.wallet) await $.store.set('tvWallet', given).catch(() => undefined)
+  return tradesRun($, wallet)
+}
+
 export const register: Register = (on, rawOptions) => {
   desk.options = optionsOf(rawOptions)
   desk.chartTimer = null
@@ -1417,6 +1734,26 @@ export const register: Register = (on, rawOptions) => {
     await $.tool.register(READ_TOOL).catch(() => undefined)
     await $.tool.register(HISTORY_TOOL).catch(() => undefined)
     await $.tool.register(TEST_TOOL).catch(() => undefined)
+    await $.command
+      .register({ name: TV_COMMAND, description: 'TradingView alerts on the desk: each one said and pinned, and a live scorecard of what came after', argumentHint: 'on | link [link] | score [name] | off | clear' })
+      .catch(() => undefined)
+    await $.command
+      .register({ name: TRADES_COMMAND, description: 'Your Hyperliquid trades on the chart from a public address: net, habits, alerts taken vs skipped', argumentHint: '[0x address] | off' })
+      .catch(() => undefined)
+    await $.tool.register(ALERTS_TOOL).catch(() => undefined)
+    await $.tool.register(TRADES_TOOL).catch(() => undefined)
+    // TradingView alerts and the wallet come back as the person left them; the feed is read again every minute.
+    if (tv.kept.length === 0) {
+      const saved = await $.store.get('tvAlerts').catch(() => undefined)
+      tv.kept = keepAlerts([], parseFeed({ alerts: Array.isArray(saved) ? saved : [] }))
+    }
+    const feed = await $.store.get('tvFeed').catch(() => undefined)
+    if (typeof feed === 'string' && feedUrlOf(feed) && !tv.timer) {
+      tv.feed = feed
+      tvStart($)
+    }
+    const wallet = await $.store.get('tvWallet').catch(() => undefined)
+    if (typeof wallet === 'string') tv.wallet = walletOf(wallet)
     // The indicators come back as the person left them.
     if ((await read($, studies)) === null) {
       const saved = await $.store.get('studies').catch(() => undefined)
@@ -1532,6 +1869,9 @@ export const register: Register = (on, rawOptions) => {
       await update($, layerList, () => null)
       desk.alertTimer?.cancel()
       desk.alertTimer = null
+      // TradingView: stop reading the link and forget it, the alerts kept and the wallet.
+      tvStop()
+      Object.assign(tv, { feed: null, kept: [], isGone: false, wallet: null, fills: [], fillsAt: 0 })
       const keys = await $.store.keys().catch((): string[] => [])
       for (const key of keys) await $.store.delete(key).catch(() => undefined)
       const wiped = keys.length === 1 ? '1 saved item wiped' : `${keys.length} saved items wiped`
@@ -1733,6 +2073,67 @@ export const register: Register = (on, rawOptions) => {
     const t = parseTestWords(e.args)
     if (!t) return { text: `Try: /${TEST_COMMAND} rsi < 30 exit rsi > 50 · /${TEST_COMMAND} ema 20 crosses above ema 50 exit ema 20 crosses below ema 50 on 4h · /${TEST_COMMAND} rsi > 70 hold 12 short · /${TEST_COMMAND} rsi < 30 exit rsi > 50 across BTC ETH SOL` }
     return { text: await runTestTool($, t) }
+  })
+
+  on('command.run', { command: TV_COMMAND }, async ($, e) => {
+    const arg = e.args.trim()
+    const words = arg.split(/\s+/)
+    const verb = (words[0] ?? '').toLowerCase()
+    if (verb === '' || verb === 'list' || verb === 'status') {
+      if (tv.feed) await tvPoll($, true)
+      return { text: `${tvStatus()}\nNext: /${TV_COMMAND} ${tv.feed ? 'score' : 'on'}` }
+    }
+    if (verb === 'on') return { text: await tvOn($, null) }
+    if (verb === 'link') return { text: await tvOn($, arg.slice(4).trim() || '?') }
+    if (/^https?:\/\//i.test(verb)) return { text: await tvOn($, arg) }
+    if (verb === 'score') return { text: await tvScore($, words.slice(1).join(' ')) }
+    if (verb === 'off') {
+      tvStop()
+      tv.feed = null
+      await tvSave($)
+      return { text: `TradingView alerts off: the desk stopped reading them. The ${tv.kept.length} kept stay for the scorecard (/${TV_COMMAND} clear drops them). Your TradingView alerts still go to DaviddTech+ until you take the link out there.` }
+    }
+    if (verb === 'clear') {
+      const n = tv.kept.length
+      tv.kept = []
+      await tvSave($)
+      const all = ((await read($, layerList)) ?? []).filter(l => l.name !== ALERT_LAYER)
+      await setLayers($, all)
+      return { text: `${n} kept alert${n === 1 ? '' : 's'} dropped from this PC, and their pins.` }
+    }
+    return { text: tvStatus() }
+  })
+
+  on('command.run', { command: TRADES_COMMAND }, async ($, e) => {
+    const arg = e.args.trim()
+    if (arg.toLowerCase() === 'off') {
+      tv.wallet = null
+      tv.fills = []
+      tv.fillsAt = 0
+      await $.store.set('tvWallet', '').catch(() => undefined)
+      await setLayers($, ((await read($, layerList)) ?? []).filter(l => l.name !== TRADE_LAYER))
+      return { text: 'Wallet forgotten and its pins taken off the chart.' }
+    }
+    const wallet = arg === '' ? tv.wallet : walletOf(arg)
+    if (!wallet)
+      return {
+        text:
+          arg === ''
+            ? `Your trades on the chart: /${TRADES_COMMAND} 0x… with your public Hyperliquid address. It is read straight from Hyperliquid by this PC and kept here, never sent to DaviddTech. No keys: an address only reads.`
+            : 'That is not a wallet address (0x and 40 letters or digits).',
+      }
+    if (wallet !== tv.wallet) await $.store.set('tvWallet', wallet).catch(() => undefined)
+    return { text: await tradesRun($, wallet) }
+  })
+
+  on('tool.run', { tool: /^mcp__lab-desk__chart_alerts$/ }, async ($, e) => {
+    const input = e as unknown as { action?: unknown; name?: unknown; count?: unknown }
+    return { result: await tvAlertsTool($, input) }
+  })
+
+  on('tool.run', { tool: /^mcp__lab-desk__chart_trades$/ }, async ($, e) => {
+    const input = e as unknown as { wallet?: unknown }
+    return { result: await tradesTool($, input) }
   })
 
   on('tool.run', { tool: HISTORY_TOOL_NAME }, async ($, e) => {

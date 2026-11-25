@@ -1,0 +1,5 @@
+{
+  "description": "DaviddTech+ charts: reads DaviddTech+ forecast answers as they pass and draws them in a pane; registers /daviddtech-chart.",
+  "hooks": {},
+  "modules": ["./register.tsx"]
+}

@@ -1,0 +1,7 @@
+{
+  "description": "DaviddTech looks: animated winter, market weather and pine scenes for the desktop and mobile apps, plus the DaviddTech Aid check in the status line",
+  "hooks": {},
+  "modules": [
+    "./register.tsx"
+  ]
+}

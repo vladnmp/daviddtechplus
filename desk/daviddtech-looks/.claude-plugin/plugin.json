@@ -1,0 +1,22 @@
+{
+  "name": "daviddtech-looks",
+  "version": "1.1.0",
+  "description": "Animated looks for the Claude desktop and mobile apps: a winter night with snow and lights, a market weather sky that follows the DaviddTech+ storm levels, and a pine forest that pulses red or green after a DaviddTech Aid check.",
+  "author": {
+    "name": "DaviddTech"
+  },
+  "homepage": "https://www.skool.com/daviddtech/about",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "aidStatus": {
+      "type": "string",
+      "title": "Aid check in the status line",
+      "description": "on shows the last DaviddTech Aid check (red, orange, yellow or clean, and the score) in the status line; off leaves the status line alone. The pine look still pulses either way.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    }
+  }
+}

@@ -8,13 +8,43 @@
   "plugins": [
     {
       "name": "daviddtechplus",
-      "description": "DaviddTech+ in Claude Code, on top of the DaviddTech+ connector from claude.ai: ready routines as slash commands (after-close desk, night desk, storm check, watchlist triage, same-bet check, rule journal, DCA check-in, earnings week) and a market weather report with storm levels.",
-      "version": "1.0.1",
+      "description": "DaviddTech+ in Claude Code, on top of the DaviddTech+ connector from claude.ai: ready routines as slash commands (close check, night check, storm check, watchlist triage, same-bet check, rule journal, DCA check-in, earnings week) and a market weather report with storm levels.",
+      "version": "1.1.0",
       "author": {
         "name": "DaviddTech"
       },
       "homepage": "https://www.skool.com/daviddtech/about",
       "source": "./plugin"
+    },
+    {
+      "name": "lab-desk",
+      "description": "The Lab desk, read-only: a live Hyperliquid chart your AI can see and paint on, a history lab (what happened after, moments like now, an honest test with fees, funding and a luck check), a watchlist above the prompt, price and funding in the status line, and the DaviddTech+ forecast range. No keys, no orders.",
+      "version": "1.1.0",
+      "author": {
+        "name": "DaviddTech"
+      },
+      "homepage": "https://www.skool.com/daviddtech/about",
+      "source": "./desk/lab-desk"
+    },
+    {
+      "name": "daviddtech-charts",
+      "description": "DaviddTech+ charts in Claude Code: the last forecast (fan, level odds, plan odds, scan ranges) drawn in a pane beside the chat, with a short line above the prompt and /daviddtech-chart.",
+      "version": "1.1.0",
+      "author": {
+        "name": "DaviddTech"
+      },
+      "homepage": "https://www.skool.com/daviddtech/about",
+      "source": "./desk/daviddtech-charts"
+    },
+    {
+      "name": "daviddtech-looks",
+      "description": "Animated looks for the Claude desktop and mobile apps: a winter night with snow and lights, a market weather sky that follows the DaviddTech+ storm levels, and a pine forest that pulses red or green after a DaviddTech Aid check.",
+      "version": "1.1.0",
+      "author": {
+        "name": "DaviddTech"
+      },
+      "homepage": "https://www.skool.com/daviddtech/about",
+      "source": "./desk/daviddtech-looks"
     }
   ]
 }

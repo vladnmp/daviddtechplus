@@ -1,0 +1,42 @@
+{
+  "name": "lab-desk",
+  "version": "1.1.0",
+  "description": "The Lab desk, read-only: a live Hyperliquid chart your AI can see and paint on, a history lab (what happened after, moments like now, an honest test with fees, funding and a luck check), a watchlist above the prompt, price and funding in the status line, and the DaviddTech+ forecast range. No keys, no orders.",
+  "author": {
+    "name": "DaviddTech"
+  },
+  "homepage": "https://www.skool.com/daviddtech/about",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "forecast": {
+      "type": "string",
+      "title": "DaviddTech+ range on the chart",
+      "description": "on asks DaviddTech+ for the coin's forecast once when you open a chart (one analyze_asset call, kept 6 hours) and draws its 50% and 80% ranges to the right of the candles; off never asks.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "forecastHorizon": {
+      "type": "string",
+      "title": "DaviddTech+ forecast length",
+      "description": "How many days ahead the forecast range reaches: 5 or 20.",
+      "default": "5",
+      "options": [
+        "5",
+        "20"
+      ]
+    },
+    "palette": {
+      "type": "string",
+      "title": "Chart colors",
+      "description": "classic draws up candles teal and down candles red. colorblind draws up candles blue and down candles orange, a pair that stays apart for red-green color blindness and in grayscale.",
+      "default": "classic",
+      "options": [
+        "classic",
+        "colorblind"
+      ]
+    }
+  }
+}

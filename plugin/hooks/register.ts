@@ -2,7 +2,7 @@ import type { EngineInterface, On, PluginOptions } from 'claude-code'
 
 /**
  * DaviddTech+ market weather: the storm levels of eight reference markets in the status line, and the
- * daily units left, through the member's own DaviddTech+ connector (added once in claude.ai, it reaches
+ * daily requests left, through the member's own DaviddTech+ connector (added once in claude.ai, it reaches
  * Claude Code too; this plugin brings no connector of its own). Read-only and small on purpose:
  * it calls two free tools (market_backdrop, get_usage), keeps the last weather line in the plugin's
  * store and writes no files. Nothing polls: one read when a session starts (band "auto", at most once
@@ -23,7 +23,7 @@ export const LEVELS = ['calm', 'normal', 'choppy', 'stormy', 'very stormy']
 export const MEANING =
   'Storm level: the chance of bigger-than-usual moves over the next 5 sessions (days for crypto) against its usual rate, up or down alike; 1 calm to 5 very stormy.'
 export const NEXT =
-  "Next: /daviddtechplus:storm puts your own symbols next to this · /daviddtechplus:desk after each close · /daviddtechplus-units for today's units."
+  "Next: /daviddtechplus:storm puts your own symbols next to this · /daviddtechplus:desk after each close · /daviddtechplus-requests for today's requests."
 export const SUGGESTIONS = { weather: 'Run a storm check on my watchlist', units: 'Show the DaviddTech+ ready routines' }
 const STORM_LINE = /Storm levels: ([^\n]+?)\.(?:\n|$)/
 const BACKDROP_TOOL = /^mcp__(.+)__market_backdrop$/
@@ -130,7 +130,7 @@ export function unitsOf(value: unknown): string | null {
 
   const free = typeof usage.still_free === 'string' ? ` ${usage.still_free}` : ''
 
-  return `DaviddTech+: ${usage.remaining_today} of ${usage.daily_limit} units left today (resets 00:00 UTC).${free}`
+  return `DaviddTech+: ${usage.remaining_today} of ${usage.daily_limit} requests left today (resets 00:00 UTC).${free}`
 }
 
 const textOf = (answer: Answer): string => (answer.content ?? []).map(block => block.text ?? '').join('\n')
@@ -260,7 +260,7 @@ export function register(on: On, raw: PluginOptions) {
         .register({ name: 'daviddtechplus-weather', description: 'DaviddTech+ market weather: storm levels of eight reference markets (free)', argumentHint: '[refresh]', immediate: true })
         .catch(() => undefined),
       $.command
-        .register({ name: 'daviddtechplus-units', description: 'DaviddTech+ daily units left today, and what stays free', immediate: true })
+        .register({ name: 'daviddtechplus-requests', description: 'DaviddTech+ daily requests left today, and what stays free', immediate: true })
         .catch(() => undefined),
     ])
 
@@ -287,16 +287,16 @@ export function register(on: On, raw: PluginOptions) {
     return { text: found.report, context: [found.context] }
   })
 
-  on('command.run', { command: 'daviddtechplus-units' }, async ($) => {
+  on('command.run', { command: 'daviddtechplus-requests' }, async ($) => {
     const reading = await read($, state, 'get_usage')
     const line = reading === null ? null : (unitsOf(reading.data) ?? unitsOf(reading.text))
 
     if (line === null && reading !== null) {
-      state.why = 'no units in the answer'
+      state.why = 'no request count in the answer'
     }
 
     if (line === null) {
-      return { text: failureOf(state, 'units') }
+      return { text: failureOf(state, 'request count') }
     }
 
     void $.prompt.suggest({ text: SUGGESTIONS.units }).catch(() => undefined)

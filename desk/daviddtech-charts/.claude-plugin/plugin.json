@@ -1,0 +1,33 @@
+{
+  "name": "daviddtech-charts",
+  "version": "1.1.0",
+  "description": "DaviddTech+ charts in Claude Code: the last forecast (fan, level odds, plan odds, scan ranges) drawn in a pane beside the chat, with a short line above the prompt and /daviddtech-chart.",
+  "author": {
+    "name": "DaviddTech"
+  },
+  "homepage": "https://www.skool.com/daviddtech/about",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "autoOpen": {
+      "type": "string",
+      "title": "Open the chart pane",
+      "description": "sidebar opens the pane by itself only where it can sit beside the chat (desktop app, wide fullscreen terminal); always tries every time; never waits for /daviddtech-chart.",
+      "default": "sidebar",
+      "options": [
+        "sidebar",
+        "always",
+        "never"
+      ]
+    },
+    "band": {
+      "type": "string",
+      "title": "Line above the prompt",
+      "description": "on shows a one-line summary with a Chart button after each new forecast; off never shows it.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    }
+  }
+}

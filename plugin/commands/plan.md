@@ -4,4 +4,4 @@ argument-hint: "<symbol and plan, e.g. NVDA open 180, loss exit 172, profit exit
 ---
 
 Please run the DaviddTech+ plan check recipe for this plan: $ARGUMENTS. Look up its live price yourself first and pass it as price_now, then show the chance it opens, which exit comes first and how often each profit exit is reached, with the levels as prices.
-The get_recipe tool (name "plan_check") has its steps, what it shows and its cost in daily units. At the end, one line on routines that pair well with this one: After-close desk (/daviddtechplus:desk) and Rule journal (/daviddtechplus:journal).
+The get_recipe tool (name "plan_check") has its steps, what it shows and its cost in daily requests. At the end, one line on routines that pair well with this one: Close check (/daviddtechplus:desk) and Rule journal (/daviddtechplus:journal).

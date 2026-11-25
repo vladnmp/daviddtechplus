@@ -153,7 +153,7 @@ describe('reading the connector text', () => {
 
   test('units come from the usage JSON, with what stays free', () => {
     expect(unitsOf(USAGE)).toBe(
-      'DaviddTech+: 18 of 20 units left today (resets 00:00 UTC). Still free: the market backdrop and ready routines.',
+      'DaviddTech+: 18 of 20 requests left today (resets 00:00 UTC). Still free: the market backdrop and ready routines.',
     )
     expect(unitsOf(JSON.parse(USAGE))).toBe(unitsOf(USAGE))
     expect(unitsOf('not json')).toBe(null)
@@ -297,13 +297,13 @@ describe('inside Claude Code', () => {
     on('session.start', ($: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
     await $.session.start(SESSION)
 
-    expect(commands.sort()).toEqual(['daviddtechplus-units', 'daviddtechplus-weather'])
+    expect(commands.sort()).toEqual(['daviddtechplus-requests', 'daviddtechplus-weather'])
   })
 
   test('with no connector the commands answer with the sign-in hint', async ($, on) => {
     on('store.get', () => ({ value: undefined }))
 
-    for (const name of ['daviddtechplus-weather', 'daviddtechplus-units']) {
+    for (const name of ['daviddtechplus-weather', 'daviddtechplus-requests']) {
       const answer = (await $.command.run(command(name))) as { text: string }
 
       expect(answer.text.startsWith(NOT_CONNECTED), answer.text).toBe(true)

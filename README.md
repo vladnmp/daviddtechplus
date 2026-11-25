@@ -27,6 +27,15 @@ Then open a new session and type `/daviddtechplus-weather`. Ready routines as sl
 
 Details: [plugin/README.md](plugin/README.md).
 
+The Desk, three more plugins from the same marketplace: a live crypto chart with the DaviddTech+ range beside
+the chat (`lab-desk`), charts for DaviddTech+ answers in a pane (`daviddtech-charts`) and the market-weather
+looks (`daviddtech-looks`):
+```
+/plugin install lab-desk@daviddtechplus
+/plugin install daviddtech-charts@daviddtechplus
+/plugin install daviddtech-looks@daviddtechplus
+```
+
 ## 3. The skill (optional)
 The same routines as an Agent Skill. In claude.ai or the Claude apps: download
 [daviddtechplus-skill.zip](https://github.com/vladnmp/daviddtechplus/raw/main/daviddtechplus-skill.zip), then

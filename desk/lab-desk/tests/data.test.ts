@@ -73,6 +73,8 @@ test('intervals, refresh period and the candle request', async () => {
   expect(refreshMs('1d')).toBe(60_000)
   const body = JSON.parse(candleBody('BTC', '1h', NOW, 10)) as { type: string; req: Record<string, unknown> }
   expect(body).toEqual({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: NOW - 10 * 3_600_000, endTime: NOW } })
+  // 5000 weeks back is before 1970, which Hyperliquid refuses: the start stays at 0.
+  expect((JSON.parse(candleBody('BTC', '1w', NOW, 5000)) as { req: { startTime: number } }).req.startTime).toBe(0)
 })
 
 test('numbers as traders read them', async () => {

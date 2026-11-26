@@ -1,6 +1,6 @@
 {
   "name": "daviddtechplus",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "DaviddTech+ in Claude Code, on top of the DaviddTech+ connector from claude.ai: ready routines as slash commands (close check, night check, storm check, watchlist triage, same-bet check, rule journal, DCA check-in, earnings week) and a market weather report with storm levels.",
   "author": {
     "name": "DaviddTech"

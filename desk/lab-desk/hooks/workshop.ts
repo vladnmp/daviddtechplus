@@ -240,6 +240,10 @@ export type Run = {
   fee: number
   from: number
   to: number
+  /** The first candle read, when the averages' warm-up starts the test well after it. */
+  readFrom?: number
+  /** It read only Hyperliquid's candles by choice (deep off), so years of Binance history may give more trades. */
+  moreHistory?: boolean
   versions: number
   few: number
   verdict: Verdict
@@ -259,6 +263,12 @@ export type Run = {
 }
 
 const fee = (f: number) => `${Number((f * 100).toFixed(4))}%`
+
+/** Why the test starts late: when a long average's warm-up took more than a sixth of what was read, say where the read began. */
+function warmedFrom(r: Run): string {
+  if (r.readFrom === undefined || r.from - r.readFrom <= (r.to - r.readFrom) / 6) return ''
+  return ` (read from ${day(r.readFrom).slice(0, 10)}; the candles before ${day(r.from).slice(0, 10)} only warm up its averages)`
+}
 
 /** The verdict as one plain line. */
 export function verdictLine(r: Run): string {
@@ -295,6 +305,7 @@ export function nextLine(r: Run, check: string): string {
       return `Next: ask Claude for a different idea through the Workshop, or the same idea on another interval; ${check} scores the bench since its date (no try counted).`
     case 'unseen-few':
     case 'few':
+      if (r.moreHistory) return `Next: the same idea on years of Binance history (the card again with deep on; each version counts as a try), or ${check} in a few weeks.`
       return `Next: a looser open condition or a shorter interval through the Workshop again (each version counts as a try), or ${check} in a few weeks.`
   }
 }
@@ -308,9 +319,10 @@ export function cardText(r: Run, check: string): string {
     `Workshop: ${r.name}, built and tested (${r.coin} ${r.interval}, ${r.side}).`,
     `Built: ${built}. ${r.aid}`.trim(),
     `Past cases: the open condition turned true ${r.cases} time${r.cases === 1 ? '' : 's'} in the history read${r.pinned > 0 ? `, the ${r.pinned} in view pinned on the chart (layer "cases")` : ''}. On the bench from ${day(r.since)} UTC: ${check} scores it from there.`,
-    `Tested: ${r.versions} versions of your idea (only its own numbers and hold moved), ${day(r.from).slice(0, 10)} to ${day(r.to).slice(0, 10)} on ${r.venue}, fee ${fee(r.fee)} a side and funding.${r.few > 0 ? ` ${r.few} had too few trades to judge.` : ''}`,
+    `Tested: ${r.versions} versions of your idea (only its own numbers and hold moved), ${day(r.from).slice(0, 10)} to ${day(r.to).slice(0, 10)} on ${r.venue}${warmedFrom(r)}, fee ${fee(r.fee)} a side and funding.${r.few > 0 && r.verdict.kind !== 'few' ? ` ${r.few} had too few trades to judge.` : ''}`,
     verdictLine(r),
-    ...r.luck,
+    // With nothing judged the verdict already says why; the luck check would only say it again.
+    ...(r.verdict.kind === 'few' ? [] : r.luck),
     ...(r.mood ? [r.mood] : []),
     `Tries on ${r.coin}, all intervals: ${r.tries.total} (kept for good${r.tries.resets > 0 ? `; ${r.tries.resets} desk reset${r.tries.resets === 1 ? '' : 's'} seen` : ''}). ${r.version}${r.judging ? ` · ${r.judging}` : ''}.`,
     `Files: ${r.folder}/ (idea.md, card.md, card.svg, result.json${r.marker ? ', marker.pine' : ''}).`,
@@ -382,7 +394,7 @@ export function cardSvg(r: Run, card: string): string {
     '<rect width="1200" height="675" fill="#131722"/>',
     `<rect x="0" y="0" width="8" height="675" fill="${passed ? '#26a69a' : '#ff9800'}"/>`,
     `<text x="56" y="84" font-size="30" font-weight="700" fill="#e0e3eb">${esc(r.name)}</text>`,
-    `<text x="56" y="122" font-size="18" fill="#9598a1">${esc(cut(`${r.coin} ${r.interval} ${r.side} · ${r.rule}`, 112))}</text>`,
+    `<text x="56" y="122" font-size="18" fill="#9598a1">${esc(cut(`${r.coin} ${r.interval}${r.side === 'long' ? ' long' : ''} · ${r.rule}`, 112))}</text>`,
     text,
     `<text x="56" y="640" font-size="14" fill="#787b86">${esc(`My own run · ${r.version}${r.judging ? ` · ${r.judging}` : ''} · tries on ${r.coin} kept for good: ${r.tries.total} · re-check: /lab-workshop check`)}</text>`,
     '</svg>',

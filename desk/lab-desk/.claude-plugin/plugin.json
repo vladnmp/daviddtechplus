@@ -1,6 +1,6 @@
 {
   "name": "lab-desk",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "The Lab desk, read-only: a live Hyperliquid chart your AI can see and paint on, a history lab on years of data (what happened after, moments like now, an honest test with fees, funding and a luck check, the Swarm that tries up to 200 rules at once, and the Workshop that builds and tests your own idea in one go, with a TradingView marker and a bench), your TradingView alerts with a live scorecard, your own trades on the chart from a public address read on your PC with a review of the leaks and a second look against your own rules, a watchlist above the prompt, price and funding in the status line, and the DaviddTech+ forecast range. No keys, no orders.",
   "author": {
     "name": "DaviddTech"

@@ -50,7 +50,8 @@ export function refreshMs(interval: string): number {
 
 export function candleBody(coin: string, interval: string, now: number, count = CANDLES_WANTED): string {
   const len = INTERVALS[interval] ?? HOUR
-  return JSON.stringify({ type: 'candleSnapshot', req: { coin, interval, startTime: now - count * len, endTime: now } })
+  // Hyperliquid refuses a start before 1970 (5000 weeks back is), and gives what it has from the start it is asked.
+  return JSON.stringify({ type: 'candleSnapshot', req: { coin, interval, startTime: Math.max(0, now - count * len), endTime: now } })
 }
 
 export const CTX_BODY = JSON.stringify({ type: 'metaAndAssetCtxs' })

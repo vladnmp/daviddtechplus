@@ -10,7 +10,7 @@ import { parseTest, runTest, seededRandom } from '../hooks/honest'
 import type { TestSpec } from '../hooks/honest'
 import type { SwarmResult } from '../hooks/swarm'
 import { markerPine } from '../hooks/export'
-import { parseTestWords } from '../hooks/register'
+import { parseTestWords, roomyInterval } from '../hooks/register'
 import { BANNED_WORDS, WORKSHOP_VERSIONS, benchAdd, cardSvg, cardText, fingerprint, ideaFile, lastingNext, markerOpens, slugOf, verdictLine, verdictOf, versionsOf } from '../hooks/workshop'
 import type { Run, Verdict } from '../hooks/workshop'
 
@@ -210,6 +210,21 @@ test('every card, idea file and picture is free of the words the desk never prin
   }
   expect(verdictLine(runOf(kinds[2] as Verdict))).toContain('the other coins could not be checked just now')
   expect(cardText(runOf(kinds[2] as Verdict), '/lab-workshop check')).toContain('Next: say go again later')
+  // Nothing judged: the verdict says why once, with no "too few" fragment or luck line saying it again.
+  const few = cardText(runOf(kinds[6] as Verdict), '/lab-workshop check')
+  expect(few).not.toContain('had too few trades to judge')
+  expect(few).not.toContain('Luck check')
+  expect(cardText(runOf(kinds[5] as Verdict), '/lab-workshop check')).toContain(' 2 had too few trades to judge.')
+  // Too few trades on Hyperliquid's own candles: the next step is the years of history.
+  expect(cardText({ ...runOf(kinds[6] as Verdict), moreHistory: true }, '/lab-workshop check')).toMatch(/^Next: the same idea on years of Binance history \(the card again with deep on/m)
+  expect(few).toMatch(/^Next: a looser open condition/m)
+  // A short rule says "short" once; a long warm-up says where the read began, a short one says nothing.
+  const short = { ...runOf(kinds[5] as Verdict), side: 'short' as const, rule: 'rsi > 75 exit rsi < 50 short' }
+  expect(cardSvg(short, cardText(short, '/lab-workshop check'))).toContain('>SOL 4h · rsi &gt; 75 exit rsi &lt; 50 short</text>')
+  expect(cardSvg(runOf(kinds[5] as Verdict), '')).toContain('>SOL 4h long · rsi &lt; 30 hold 12</text>')
+  const warmed = { ...runOf(kinds[5] as Verdict), readFrom: NOW - 1500 * 24 * H }
+  expect(cardText(warmed, '/lab-workshop check')).toMatch(/ on Binance \(read from \d{4}-\d\d-\d\d; the candles before \d{4}-\d\d-\d\d only warm up its averages\), fee /)
+  expect(cardText({ ...warmed, readFrom: NOW - 950 * 24 * H }, '/lab-workshop check')).not.toContain('read from')
   // The picture: the name alone up top (40 characters fit), the rule cut to fit, no line wider than the card.
   const long = { ...runOf(kinds[0] as Verdict), name: 'x'.repeat(40), rule: `${'close > ema 200 and '.repeat(8)}rsi < 30 hold 12` }
   const pic = cardSvg(long, cardText(long, '/lab-workshop check'))
@@ -252,6 +267,7 @@ test('on noise: the card first (nothing counted), then the run says not passed, 
   expect(card).toMatch(/^Rule: rsi < 30 exit rsi > 50 on ETH 1h, long\.$/m)
   // The test market lists BTC ETH SOL HYPE kPEPE, so three other coins from the fixed list.
   expect(card).toMatch(/checked on BTC, SOL, HYPE at 2x the fee, and passes at 3 of 3\./)
+  expect(card).toMatch(/each a try on ETH, judged together with every earlier try on ETH 1h \(none yet\)\./)
   expect(card).not.toMatch(BANNED_WORDS)
   expect(store.get('triesTotal')).toBe(undefined)
   expect(fileOf(files, 'workshop/dip/idea.md')).toMatch(/^# dip\n/)
@@ -264,6 +280,7 @@ test('on noise: the card first (nothing counted), then the run says not passed, 
   expect(text).toMatch(/^Files: workshop\/dip\/ \(idea\.md, card\.md, card\.svg, result\.json, marker\.pine\)\.$/m)
   expect(text).toMatch(/^Next: /m)
   expect(text).toMatch(/^Market data: Hyperliquid public API$/m)
+  expect(text.match(/^Next: /gm)?.length).toBe(1)
   expect(text).not.toMatch(BANNED_WORDS)
   expect(fileOf(files, 'workshop/dip/marker.pine')).toContain('alertcondition(opened, "opens"')
   expect(JSON.parse(fileOf(files, 'workshop/dip/result.json')).verdict).not.toBe('passed')
@@ -286,6 +303,19 @@ test('on noise: the card first (nothing counted), then the run says not passed, 
   expect(reset).toMatch(/ The Workshop bench \(1 rule\) and its try count stay, as they are yours/)
   expect(await call({ action: 'forget', name: 'dip' })).toMatch(/^Workshop: "dip" is off the bench\./)
   expect(await call({ action: 'check' })).toMatch(/^Workshop bench: empty\./)
+  // The same name with another rule says it replaces the card; the person's own fee and side stay as they said them.
+  expect(await call({ action: 'card', name: 'pair', rule: 'rsi < 30 exit rsi > 50', coin: 'ETH', interval: '1h', deep: false })).not.toContain('This replaces')
+  const second = await call({ action: 'card', name: 'pair', rule: 'rsi > 70 exit rsi < 50 short fee 0.1', coin: 'ETH', interval: '1h', deep: false })
+  expect(second).toMatch(/^This replaces the earlier card named pair \(rsi < 30 exit rsi > 50 on ETH 1h\); a different name keeps both\.$/m)
+  expect(second).toMatch(/^Rule: rsi > 70 exit rsi < 50 short fee 0\.1 on ETH 1h\.$/m)
+  expect(second).toMatch(/judged together with (the \d+ earlier tries|every earlier try) on ETH 1h/)
+  expect(await call({ action: 'card', name: 'pair', rule: 'rsi > 70 exit rsi < 50 short fee 0.1', coin: 'ETH', interval: '1h', deep: false })).not.toContain('This replaces')
+  // A forgotten card's idea file is still there, and the run says so instead of "no card".
+  expect(await call({ action: 'run', name: 'dip' })).toMatch(/^Workshop: no card named "dip" is kept now \(forgotten, or it made room: the newest 20 are kept\), but its idea file is in workshop\/dip\/idea\.md\.\nNext: Claude makes the card again/)
+  // The shelf keeps the newest 20 cards and says which one made room.
+  let last = ''
+  for (let i = 0; i < 20; i++) last = await call({ action: 'card', name: `shelf ${i}`, rule: 'rsi < 30 hold 12', coin: 'ETH', interval: '1h', deep: false })
+  expect(last).toMatch(/^The newest 20 cards are kept, so pair made room \(its idea file stays in workshop\/\)\.$/m)
 })
 
 test('a planted pattern passes: held on the home coin and on the other coins at twice the fee, cases pinned, marker built', { timeoutMs: 180_000 }, async ($, on) => {
@@ -301,6 +331,7 @@ test('a planted pattern passes: held on the home coin and on the other coins at 
   expect(text).toMatch(/^Past cases: the open condition turned true \d+ times in the history read, the \d+ in view pinned on the chart \(layer "cases"\)\./m)
   expect(text).toMatch(/^Built: a TradingView marker with "opens" and "closes" alerts \(workshop\/push\/marker\.pine\)\. With the DaviddTech Aid connector added \(davidd\.link\/daviddtechaid\), the marker is checked by it too\.$/m)
   expect(text).toMatch(/^Next: paste workshop\/push\/marker\.pine into TradingView/m)
+  expect(text.match(/^Next: /gm)?.length).toBe(1)
   expect(text).not.toMatch(BANNED_WORDS)
   expect(JSON.parse(fileOf(files, 'workshop/push/result.json')).verdict).toBe('passed')
   expect(fileOf(files, 'workshop/push/card.svg')).toContain('Passed the history checks')
@@ -331,4 +362,26 @@ test('Hyperliquid down: a plain line, nothing kept', async ($, on) => {
   const text = String((await $.tool.call({ tool: TOOL, action: 'card', name: 'x', rule: 'rsi < 30 hold 6', deep: false } as never)).result)
   expect(text).toMatch(/^Hyperliquid is not answering just now/)
   expect(store.get('ws_cards')).toBe(undefined)
+})
+
+test('a young coin: on 1w the card says so at once, and a run with too few candles says nothing ran or counted', async ($, on) => {
+  // 120 candles a week apart: all closed on 1w and on 4h alike.
+  engine(on, { candles: coin => rowsOf(walk(120, seedOf(coin), false).map((k, i) => ({ ...k, t: NOW - (120 - i) * 168 * H })), coin) })
+  mock.clock(on, { now: NOW })
+  const store = memStore(on)
+  folders(on)
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  const call = async (input: Record<string, unknown>) => String((await $.tool.call({ tool: TOOL, ...input } as never)).result ?? '')
+  const weekly = await call({ action: 'card', name: 'young', rule: 'rsi < 30 hold 4', coin: 'HYPE', interval: '1w', deep: false })
+  expect(weekly).toMatch(/^Workshop: HYPE 1w has only 120 closed candles on Hyperliquid, too few to test \(300 needed\), so no card was made\.\nNext: the same idea on 1d, or with deep on for years of Binance candles\.$/)
+  expect(await call({ action: 'card', name: 'young', rule: 'rsi < 30 hold 4', coin: 'HYPE', interval: '4h', deep: false })).toMatch(/^Workshop idea card: young\./)
+  const run = await call({ action: 'run', name: 'young' })
+  expect(run).toMatch(/^Workshop: HYPE 4h has only 120 closed candles on Hyperliquid, too few to test \(300 needed\)\. Nothing ran and nothing is counted\.\nNext: the same idea on 1h, or the card again with deep on for years of Binance candles\.$/)
+  expect(run).not.toMatch(BANNED_WORDS)
+  expect(store.get('triesTotal')).toBe(undefined)
+  // The hint names the first shorter interval with the candles, so a young coin is not sent on to a second no.
+  expect([roomyInterval('1w', 78), roomyInterval('1w', 30), roomyInterval('1d', 40), roomyInterval('4h', 200), roomyInterval('1h', 5)]).toEqual(['1d', '4h', '1h', '1h', '1m'])
+  // A left-out note that ends in a full stop gets just the one.
+  const card = await call({ action: 'card', name: 'note', rule: 'rsi < 30 hold 4', coin: 'HYPE', interval: '4h', deep: false, left_out: 'the news filter.' })
+  expect(card).toMatch(/^Left out \(no Lab words for it\): the news filter\.$/m)
 })

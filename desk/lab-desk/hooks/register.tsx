@@ -438,7 +438,7 @@ const TEST_TOOL = {
 const SWARM_TOOL = {
   name: 'chart_swarm',
   description:
-    'The Swarm: runs 2 to 200 trading rules at once on one Hyperliquid perp on the person\'s PC (seconds; a deep run of 200 rules up to about 20) and says which, if any, beat luck, judged all together so a big search is not fooled by its own best result. ' +
+    'The Swarm: runs 2 to 200 trading rules at once on one Hyperliquid perp on the person\'s PC (seconds; a deep run of 200 rules up to about 20 seconds) and says which, if any, beat luck, judged all together so a big search is not fooled by its own best result. ' +
     'Use it when the person asks to "find something", "search for a rule", "try lots of ideas" on a coin. YOU write the rules: varied, plain, in /lab-test words, one per item, e.g. "rsi < 30 exit rsi > 50", "ema 20 crosses above ema 50 hold 24", "close > ema 200 and rsi < 40 hold 12", "rsi > 70 hold 6 short", "funding < 0 hold 24", "oi change 24 > 10 hold 12 short", "dvol > 70 hold 24". ' +
     'Mix families (trend, pullback, momentum, funding, open interest, fear gauges), sides and holds; near-copies are fine, the check allows for them. ' +
     'It searches on the seen part (first 70%), runs a walk-forward inside it, and opens the sealed unseen part only for rules that beat luck. Every rule counts as a try on that coin. ' +

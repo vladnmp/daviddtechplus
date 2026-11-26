@@ -3,9 +3,12 @@
 
 import type { Mark } from '../types'
 import type { Spec } from './indicators'
-import { PY_FORMULA_HELPERS, parseFormula, pythonFormula } from './formula'
+import type { Node } from './formula'
+import { LAB_SERIES, PY_FORMULA_HELPERS, parseFormula, printFormula, pythonFormula } from './formula'
+import type { Condition } from './history'
 import { paneOf, specLabel, specsOf } from './indicators'
 import { fibPrices } from './marks'
+import type { Scan } from './scan'
 import { INKS } from './svg'
 
 const AID_LINE = '// Written with the DaviddTech Aid rules (skool.com/daviddtech/about)'
@@ -515,4 +518,81 @@ export function pythonScript(ids: readonly string[], coin: string, interval: str
 /** The file name a person would save it as. */
 export function exportFile(lang: ExportLang, coin: string, interval: string): string {
   return `lab_${coin.toLowerCase().replace(/[^a-z0-9]/g, '')}_${interval}.${lang === 'pine' ? 'pine' : 'py'}`
+}
+
+/** Does a formula read a series only the desk has (funding, open interest, the fear gauges)? */
+function readsDesk(n: Node): boolean {
+  switch (n.t) {
+    case 'num':
+      return false
+    case 'var':
+      return (LAB_SERIES as readonly string[]).includes(n.name)
+    case 'call':
+      return n.args.some(readsDesk)
+    case 'neg':
+      return readsDesk(n.a)
+    case 'bin':
+      return readsDesk(n.a) || readsDesk(n.b)
+  }
+}
+
+/** One part of a condition as Pine: "a < b", or ta.crossover / ta.crossunder (the same as the desk's crosses). */
+function partPine(p: Scan): string {
+  const a = printFormula(p.left)
+  const b = printFormula(p.right)
+  if (p.op === 'crosses above') return `ta.crossover(${a}, ${b})`
+  if (p.op === 'crosses below') return `ta.crossunder(${a}, ${b})`
+  return `${a} ${p.op} ${b}`
+}
+
+/**
+ * A Workshop rule as a TradingView marker: it marks where the rule opens and closes (one trade at a time, on closed
+ * candles, as the Lab test reads it) and has an "opens" and a "closes" alert. Parts that read what only the desk
+ * watches are left out and named. Null when nothing of the open condition is left, or nothing would ever close it.
+ */
+export function markerPine(o: { enter: Condition; exit: Condition | null; hold: number | null; side: 'long' | 'short'; name: string; rule: string; coin: string; interval: string }): { code: string; left: string[] } | null {
+  const left: string[] = []
+  const keep = (c: Condition) => {
+    const out: string[] = []
+    for (const p of c.parts) {
+      if (readsDesk(p.left) || readsDesk(p.right)) left.push(p.text)
+      else out.push(partPine(p))
+    }
+    return out
+  }
+  const opens = keep(o.enter)
+  const closes = o.exit ? keep(o.exit) : []
+  if (opens.length === 0 || (closes.length === 0 && o.hold === null)) return null
+  const long = o.side === 'long'
+  const closeIf = [...(closes.length > 0 ? [`closes_if`] : []), ...(o.hold !== null ? [`bar_index - opened_at >= ${o.hold}`] : [])].join(' or ')
+  const code = [
+    ...header(`Workshop · ${o.name} · ${o.coin} ${o.interval}`, true),
+    '',
+    `// The tested rule (${o.side}): ${o.rule}`,
+    ...(left.length > 0 ? [`// Left out, watched by the desk only (not the tested rule): ${left.join('; ')}`] : []),
+    '// One trade at a time, read on closed candles, as the Lab test reads it.',
+    '',
+    `opens_if = ${opens.join(' and ')}`,
+    ...(closes.length > 0 ? [`closes_if = ${closes.join(' and ')}`] : []),
+    '',
+    'var int opened_at = na',
+    'bool opened = false',
+    'bool closed = false',
+    'if barstate.isconfirmed',
+    '    if na(opened_at)',
+    '        if bar_index >= 1 and opens_if',
+    '            opened_at := bar_index',
+    '            opened := true',
+    `    else if ${closeIf}`,
+    '        opened_at := na',
+    '        closed := true',
+    '',
+    `plotshape(opened, "opens", ${long ? 'shape.triangleup' : 'shape.triangledown'}, ${long ? 'location.belowbar' : 'location.abovebar'}, color = ${long ? UP : DOWN}, size = size.small)`,
+    `plotshape(closed, "closes", shape.xcross, ${long ? 'location.abovebar' : 'location.belowbar'}, color = color.gray, size = size.tiny)`,
+    `alertcondition(opened, "opens", "${o.name}: the rule opens on {{ticker}} {{interval}}")`,
+    `alertcondition(closed, "closes", "${o.name}: the rule closes on {{ticker}} {{interval}}")`,
+    '',
+    '// Checks: v6 · marks only, no orders · same interval as the test · no future data · alerts on closed candles',
+  ].join('\n')
+  return { code, left }
 }

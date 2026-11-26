@@ -32,7 +32,7 @@ test('funding reads as %/yr in the history lab, and is refused in a plot or a sc
   const plain = parseCondition('rsi < 30')
   expect('error' in plain ? true : plain.usesFunding).toBe(false)
   const scan = parseScan('funding > 20')
-  expect('error' in scan ? scan.error : '').toMatch(/works in the history lab \(\/lab-after, \/lab-test\)/)
+  expect('error' in scan ? scan.error : '').toMatch(/works in the history lab \(\/lab-after, \/lab-test, \/lab-swarm\)/)
   const plot = parseFormula('funding * 2')
   expect('error' in plot ? plot.error : '').toMatch(/not in a plot, scan or alert/)
 })

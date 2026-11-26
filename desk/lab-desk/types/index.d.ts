@@ -10,6 +10,12 @@ export type Candle = {
   v: number
   /** The history lab only: funding over this candle's hours as %/yr (the hourly rate x 24 x 365), null where unread. */
   f?: number | null
+  /** The history lab only: open interest (one side, in coins) known at this candle's close; Bybit. */
+  oi?: number | null
+  /** The history lab only: Deribit's DVOL (the crypto fear gauge) known at this candle's close. */
+  dv?: number | null
+  /** The history lab only: the VIX (the stock fear gauge) known at this candle's close; FRED. */
+  vx?: number | null
 }
 
 /** One perp's live context from metaAndAssetCtxs. `funding` is the hourly rate. */

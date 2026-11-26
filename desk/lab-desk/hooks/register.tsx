@@ -54,12 +54,19 @@ import { MAX_ALERTS, MAX_WHEN, alertText, hitAlerts, hitText, parseAlert, parseW
 import { deskAlt, deskSvg, shareCard } from './svg'
 import { addLayers, layerGhost, layerMarks, layerStudies, layersFromStore, layersLine, removeLayers } from './layers'
 import { AHEAD_DEFAULT, AHEAD_MAX, LIKE_WINDOW, afterStudy, afterText, likeNow, likeText, parseCondition, pct } from './history'
-import { FEE_DEFAULT, MAX_TRIES_KEPT, MIN_UNSEEN, SEEN_SHARE, acrossText, cutIndex, fundingNote, honestTest, parseTest, specKey, testText, withFunding } from './honest'
+import { FEE_DEFAULT, MAX_TRIES_KEPT, MIN_UNSEEN, SEEN_SHARE, acrossText, cutIndex, fundingNote, honestTest, parseTest, seedOf, specKey, specWords, testText, withFunding } from './honest'
 import type { CoinRow, Funding, TestSpec } from './honest'
+import { BINANCE_FEE, DEEP_MAX, DEEP_STEP, VIX_URL, binanceSymbol, dvolCurrency, extrasOf, hourlyFunding, mergeByTime, packCandles, packPoints, parseVix, readDvol, readFunding, readKlines, readOi, settledFunding, sourcesLine, bybitSymbol, toCoinUnits, unpackCandles, unpackPoints, withExtras, withSettledFunding } from './deep'
+import type { Get, Point } from './deep'
+import { SWARM_MAX, SWARM_MIN, runSwarm, splitRules, swarmText } from './swarm'
+import { MIN_SCORED } from './spa'
 import { ALERT_INK, ALERT_LAYER, FEED_MS, alertCoin, alertInterval, alertPins, backtestOf, feedQuery, feedUrlOf, groupAlerts, keepAlerts, lastId, listText as tvListText, parseFeed, scoreGroup, scoreRow, scoreText, toastText, ungradedLine } from './live'
 import type { Score, TvAlert } from './live'
 import { FILLS_DAYS, TRADE_INK, TRADE_LAYER, alertHabits, fillsRequest, habitsText, keepFills, moveAfter, parseFills, roundTrips, shortWallet, tripList, tripPins, tripsText, walletOf } from './fills'
-import type { Fill } from './fills'
+import type { Fill, Trip } from './fills'
+import { RULES_EXAMPLES, RULES_FILE, RULES_HEAD, RULES_TEMPLATE, allRulesOf, leaksNow, reviewText, reviewTrips, ruleLine, rulesOf, secondLookText } from './review'
+import type { Review } from './review'
+import { ema as emaLine, rsi as rsiLine } from './indicators'
 import type { Theme } from './svg'
 import {
   FORECAST_TTL_MS,
@@ -87,6 +94,7 @@ export const SCAN_COMMAND = 'lab-scan'
 export const AFTER_COMMAND = 'lab-after'
 export const LIKE_COMMAND = 'lab-like'
 export const TEST_COMMAND = 'lab-test'
+export const SWARM_COMMAND = 'lab-swarm'
 export const ALERT_COMMAND = 'lab-alert'
 /** The most candles a chart asks for: the shown 300 plus the longest indicator's warm-up. */
 const MAX_CANDLES = 1500
@@ -259,6 +267,7 @@ export const CHART_TOOL_NAME = 'mcp__lab-desk__chart'
 export const READ_TOOL_NAME = 'mcp__lab-desk__chart_read'
 export const HISTORY_TOOL_NAME = 'mcp__lab-desk__chart_history'
 export const TEST_TOOL_NAME = 'mcp__lab-desk__chart_test'
+export const SWARM_TOOL_NAME = 'mcp__lab-desk__chart_swarm'
 const CHART_TOOL = {
   name: 'chart',
   description:
@@ -388,12 +397,13 @@ const HISTORY_TOOL = {
     type: 'object',
     properties: {
       mode: { type: 'string', enum: ['after', 'like'] },
-      when: { type: 'string', description: 'For "after": the condition in scan words, e.g. "rsi < 30", "close crosses above ema 200", "rsi < 30 and close > ema 200", "funding > 20" (funding in %/yr, like the status line), optional "on 4h"' },
+      when: { type: 'string', description: 'For "after": the condition in scan words, e.g. "rsi < 30", "close crosses above ema 200", "rsi < 30 and close > ema 200", "funding > 20" (funding in %/yr, like the status line), "oi change 24 > 10" (open interest up 10% in 24 candles), "dvol > 70" (the crypto fear gauge), "vix > 25" (the stock fear gauge), optional "on 4h"' },
       coin: { type: 'string', description: 'Defaults to the chart coin' },
       interval: { type: 'string', enum: ['1m', '5m', '15m', '1h', '4h', '1d', '1w'], description: 'Defaults to the condition\'s "on 4h", else the chart\'s. 1h reaches about 7 months back, 4h about 2 years, 1d all of it' },
       ahead: { type: 'number', description: 'Candles to look ahead, default 10' },
       window: { type: 'number', description: 'For "like": closes in the shape compared, default 20' },
       mark: { type: 'boolean', description: 'Pin the cases on the chart (default true)' },
+      deep: { type: 'boolean', description: 'Years of history instead of 5000 candles: Binance\'s USDT perp candles and funding (1h back about 5.7 years, 4h and 1d to 2019), read once and kept on the person\'s PC, topped up after. Binance\'s taker fee 0.05% a side unless given. The answer names the venue.' },
     },
     required: ['mode'],
   },
@@ -404,13 +414,13 @@ const TEST_TOOL = {
   description:
     'The honest test of a trading idea on a Hyperliquid perp, run on the person\'s PC over up to 5000 closed candles: enter when a condition holds, exit when another holds or after N candles, long or short, ' +
     'with Hyperliquid\'s taker fee (0.045% a side unless given) and the real hourly funding. It splits history into the seen part (first 70%) and the unseen part (last 30%), checks nearby settings on the seen part, ' +
-    'counts every different test tried on the coin, and ends with a plain line on how likely luck alone is. Unseen trades are pinned on the chart. ' +
+    'keeps every different test tried on the coin, and ends with a plain line on how likely luck alone is, judged together with every earlier try that saw the unseen part (a block-bootstrap check across all of them, the market\'s own drift taken off; under 30 unseen trades it gives no verdict). Unseen trades are pinned on the chart. ' +
     'Report the unseen part first, the luck line word for word, and never promise future results. Use when the person asks "would this have worked", "test this", "backtest". ' +
     'coins (2 to 5) runs the same test on each and says on how many it held and how likely luck gives that: the fairest check of an idea; the first read of a coin\'s funding can take half a minute. Read-only: it never places orders.',
   inputSchema: {
     type: 'object',
     properties: {
-      enter: { type: 'string', description: 'When to enter, in scan words: "rsi < 30", "ema 20 crosses above ema 50", "close > ema 200 and rsi < 40", "funding < 0" (funding in %/yr)' },
+      enter: { type: 'string', description: 'When to enter, in scan words: "rsi < 30", "ema 20 crosses above ema 50", "close > ema 200 and rsi < 40", "funding < 0" (funding in %/yr), "oi change 24 > 10", "dvol > 70", "vix > 25"' },
       exit: { type: 'string', description: 'When to exit, same words (optional when hold is given)' },
       hold: { type: 'number', description: 'Exit after this many candles at most (default 10 when there is no exit condition)' },
       side: { type: 'string', enum: ['long', 'short'] },
@@ -419,8 +429,31 @@ const TEST_TOOL = {
       coins: { type: 'array', items: { type: 'string' }, description: 'The same test across 2 to 5 coins, e.g. ["BTC", "ETH", "SOL"]; nothing is pinned' },
       interval: { type: 'string', enum: ['1m', '5m', '15m', '1h', '4h', '1d', '1w'] },
       mark: { type: 'boolean', description: 'Pin the unseen trades on the chart (default true)' },
+      deep: { type: 'boolean', description: 'Years of history instead of 5000 candles: Binance\'s USDT perp candles and funding (1h back about 5.7 years, 4h and 1d to 2019), read once and kept on the person\'s PC, topped up after. Binance\'s taker fee 0.05% a side unless given. The answer names the venue.' },
     },
     required: ['enter'],
+  },
+  isDeferred: false,
+} as const
+const SWARM_TOOL = {
+  name: 'chart_swarm',
+  description:
+    'The Swarm: runs 2 to 200 trading rules at once on one Hyperliquid perp on the person\'s PC (seconds; a deep run of 200 rules up to about 20) and says which, if any, beat luck, judged all together so a big search is not fooled by its own best result. ' +
+    'Use it when the person asks to "find something", "search for a rule", "try lots of ideas" on a coin. YOU write the rules: varied, plain, in /lab-test words, one per item, e.g. "rsi < 30 exit rsi > 50", "ema 20 crosses above ema 50 hold 24", "close > ema 200 and rsi < 40 hold 12", "rsi > 70 hold 6 short", "funding < 0 hold 24", "oi change 24 > 10 hold 12 short", "dvol > 70 hold 24". ' +
+    'Mix families (trend, pullback, momentum, funding, open interest, fear gauges), sides and holds; near-copies are fine, the check allows for them. ' +
+    'It searches on the seen part (first 70%), runs a walk-forward inside it, and opens the sealed unseen part only for rules that beat luck. Every rule counts as a try on that coin. ' +
+    '"None beat luck" is the usual and honest answer: say so plainly, never stretch a near miss. Report the luck line and the unseen part word for word, never promise future results. Read-only: it never places orders.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      rules: { type: 'array', items: { type: 'string' }, description: '2 to 200 rules in /lab-test words: enter condition, then exit condition and/or "hold N", optional "short", optional "fee 0.02"' },
+      coin: { type: 'string', description: 'Defaults to the chart coin' },
+      interval: { type: 'string', enum: ['1m', '5m', '15m', '1h', '4h', '1d', '1w'], description: 'Defaults to the chart\'s. With deep, 1h reaches about 5.7 years and 4h all the way to 2019' },
+      deep: { type: 'boolean', description: 'Years of Binance history kept on the PC instead of 5000 Hyperliquid candles (recommended: a search of many rules needs years)' },
+      fee: { type: 'number', description: 'Fee per side in % for every rule that gives none' },
+      mark: { type: 'boolean', description: 'Pin the unseen trades of the strongest rule that beat luck (default true)' },
+    },
+    required: ['rules'],
   },
   isDeferred: false,
 } as const
@@ -535,13 +568,225 @@ async function fundingRows($: EngineInterface, coin: string, from: number, quiet
   return { rows: rows.filter(x => x.t >= from && x.t <= end), isComplete }
 }
 
+// Deep history: years of Binance candles and funding, Bybit open interest and the two fear gauges, kept as files in
+// this plugin's own data folder on the PC (CLAUDE_PLUGIN_DATA, kept across updates) and topped up from where they
+// stopped. Where that folder can't be had (outside the CLI), kept in memory for the session only.
+const deepMemory = new Map<string, { at: number; text: string }>()
+let deepDirRead: Promise<string | null> | null = null
+/** The earliest time each file was read back to this session: a coin listed later than asked is not asked again. */
+const deepFloor = new Map<string, number>()
+const coversFrom = (name: string, first: number | undefined, from: number, slack: number) => first !== undefined && (first <= from + slack || (deepFloor.get(name) ?? Infinity) <= from)
+
+function deepFolder($: EngineInterface): Promise<string | null> {
+  deepDirRead ??= $.process
+    .hookEnv()
+    .then(env => (env.CLAUDE_PLUGIN_DATA ? `${env.CLAUDE_PLUGIN_DATA.replace(/[\\/]+$/, '')}/deep` : null))
+    .catch(() => null)
+  return deepDirRead
+}
+
+/** A deep file's text and when it was written; null when there is none yet. */
+async function deepLoad($: EngineInterface, name: string): Promise<{ at: number; text: string } | null> {
+  const mem = deepMemory.get(name)
+  if (mem) return mem
+  const dir = await deepFolder($)
+  if (!dir) return null
+  const path = `${dir}/${name}`
+  const st = await $.fs.stat(path).catch(() => null)
+  if (!st || st.kind !== 'file') return null
+  const text = await $.fs.read(path).catch(() => null)
+  if (typeof text !== 'string') return null
+  const got = { at: st.mtimeMs, text }
+  deepMemory.set(name, got)
+  return got
+}
+
+async function deepSave($: EngineInterface, name: string, text: string): Promise<void> {
+  const at = await $.clock.now()
+  deepMemory.set(name, { at, text })
+  if (deepMemory.size > 40) deepMemory.delete(deepMemory.keys().next().value as string)
+  const dir = await deepFolder($)
+  if (dir) await $.fs.write(`${dir}/${name}`, text).catch(() => undefined)
+}
+
+const deepGet = ($: EngineInterface): Get => async (url: string) => (await $.http.fetch(url, { method: 'GET' })).text
+/** Binance's USDT perps started in Sep 2019; nothing is asked before. */
+const DEEP_START = Date.UTC(2019, 8, 1)
+
+/** Up to DEEP_MAX closed Binance candles for a coin, from the file and topped up; cut at bar replay's point. */
+async function deepCandles($: EngineInterface, coin: string, interval: string): Promise<Candle[] | { error: string; isRefused?: boolean }> {
+  const symbol = binanceSymbol(coin)
+  const step = DEEP_STEP[interval] ?? 3_600_000
+  const name = `${symbol}_${interval}.json`
+  const now = await $.clock.now()
+  const file = await deepLoad($, name)
+  let rows = file ? unpackCandles(file.text) : []
+  const last = rows.at(-1)
+  if (!file || now - file.at > refreshMs(interval) || !last || last.t + 2 * step < now) {
+    // A file older than DEEP_MAX candles starts fresh: topping up from its end would stop short (60 pages) of now.
+    const fresh = now - DEEP_MAX * step
+    const isStale = last !== undefined && last.t + step < fresh
+    const from = last && !isStale ? last.t + step : Math.max(DEEP_START, fresh)
+    const pages = Math.ceil((now - from) / step / 1500)
+    // About half a second a candle page (read one after another) and 0.3 s a page of the funding read next (1000 settlements of 8 h).
+    const fundPages = Math.ceil((now - from) / (8 * 3_600_000) / 1000)
+    const secs = Math.max(5, Math.ceil((pages * 0.5 + fundPages * 0.3) / 5) * 5)
+    if (pages > 4) $.ui.toast(`Reading ${coin} ${interval} from ${utcText(from).slice(0, 10)} from Binance, up to about ${secs} s${last ? '' : ' the first time'}; ${(await deepFolder($)) ? 'kept on this PC and topped up after' : 'kept for this session'}.`)
+    // A refusal (451 = not served in this location, 403 = refused) stays on a retry, so it is said apart from a busy venue.
+    let refused = 0
+    const get: Get = async url => {
+      const r = await $.http.fetch(url, { method: 'GET' })
+      if (r.status === 451 || r.status === 403) refused = r.status
+      return r.text
+    }
+    const got = await readKlines(get, symbol, interval, from, now).catch(() => ({ error: 'Binance could not be reached', rows: [] as Candle[] }))
+    // Closed candles only: the forming one would stay in the file half-made. A read cut short keeps what came.
+    const came = ('error' in got ? got.rows : got).filter(c => c.t + step <= now)
+    if (!('error' in got) || came.length > 0) {
+      rows = mergeByTime(isStale && came.length > 0 ? [] : rows, came, DEEP_MAX)
+      await deepSave($, name, packCandles(rows))
+    }
+    if ('error' in got) {
+      if (rows.length === 0 && refused) return { error: `${refused === 451 ? 'Binance does not serve this location' : 'Binance refused the request from here'}, so deep history can't be read; without "deep" the desk reads Hyperliquid's own.`, isRefused: true }
+      if (rows.length === 0) return { error: /symbol/i.test(got.error) ? `Binance has no ${symbol} perp, so there is no deep history for ${coin}; without "deep" the desk reads Hyperliquid's own.` : `Could not read ${coin} ${interval} from Binance just now (${got.error}); try again in a minute.` }
+      // History that stops short of now would be tested as if it were all of it.
+      const lastT = (rows.at(-1) as Candle).t
+      if (lastT + 2 * step < Math.min(now, await historyEnd($))) return { error: `Binance stopped answering partway (${got.error}), so ${coin} ${interval} is read only up to ${utcText(lastT).slice(0, 10)}; what came is kept. Try again in a minute to read the rest.` }
+    }
+  }
+  const end = await historyEnd($)
+  return toCoinUnits(coin, rows.filter(c => c.t + step <= Math.min(now, end)))
+}
+
+/** Binance funding for a coin from `from` on: hourly rows for costs (each settlement spread over its hours), settled points for conditions. */
+async function deepFunding($: EngineInterface, coin: string, from: number): Promise<{ rows: Funding[]; settled: Point[]; isComplete: boolean }> {
+  const symbol = binanceSymbol(coin)
+  const name = `${symbol}_funding.json`
+  const now = await $.clock.now()
+  const file = await deepLoad($, name)
+  let rows: Funding[] = file ? unpackPoints(file.text).map(p => ({ t: p.t, rate: p.v })) : []
+  let isComplete = true
+  const last = rows.at(-1)
+  const first = rows[0]
+  const floor = Math.max(from, DEEP_START)
+  const covers = coversFrom(name, first?.t, floor, 9 * 3_600_000)
+  // A file whose last settlement is over 9 hours old was cut short (or the coin stopped): read on from there.
+  if (!file || now - file.at > 3_600_000 || !covers || !last || last.t + 9 * 3_600_000 < now) {
+    const start = covers && last ? last.t + 1 : floor
+    const got = await readFunding(deepGet($), symbol, start, now).catch(() => ({ error: 'Binance could not be reached' }))
+    if ('error' in got) isComplete = false
+    else {
+      rows = mergeByTime(rows, got.rows)
+      isComplete = got.isComplete
+      if (!covers && got.isComplete) deepFloor.set(name, floor)
+      await deepSave($, name, packPoints(rows))
+    }
+  }
+  const end = await historyEnd($)
+  return { rows: hourlyFunding(rows).filter(x => x.t >= from && x.t <= end), settled: settledFunding(rows).filter(x => x.t <= end), isComplete }
+}
+
+/** A dated series kept in one file and topped up: open interest (Bybit), DVOL (Deribit), VIX (FRED). */
+async function deepSeries($: EngineInterface, name: string, from: number, freshMs: number, readMore: (from: number, now: number) => Promise<Point[] | { error: string }>, onError?: (error: string) => void): Promise<Point[] | null> {
+  const now = await $.clock.now()
+  const file = await deepLoad($, name)
+  let rows = file ? unpackPoints(file.text) : []
+  const first = rows[0]
+  const last = rows.at(-1)
+  const coversStart = coversFrom(name, first?.t, from, 2 * 86_400_000)
+  const stale = !file || now - file.at > freshMs
+  // Only what the file lacks: before its first row (once a session; an empty answer means the series starts later) and after its last when stale.
+  const spans: [number, number][] = !first || !last ? [[from, now]] : [...(coversStart ? [] : [[from, first.t - 1] as [number, number]]), ...(stale ? [[last.t + 1, now] as [number, number]] : [])]
+  let isAll = true
+  for (const [a, b] of spans) {
+    const got = await readMore(a, b).catch(() => ({ error: 'could not be reached' }))
+    if ('error' in got) {
+      isAll = false
+      onError?.(got.error)
+      continue
+    }
+    // Only what is already known: a day not yet closed would stay in the file half-made.
+    rows = mergeByTime(rows, got.filter(x => x.t <= now), 120_000)
+  }
+  if (rows.length === 0) return null
+  if (spans.length > 0 && isAll) {
+    if (!coversStart) deepFloor.set(name, from)
+    await deepSave($, name, packPoints(rows))
+  }
+  return rows
+}
+
+/** Open interest and the fear gauges on the candles, where the condition reads them; a line for any that failed. */
+async function attachExtras($: EngineInterface, coin: string, interval: string, candles: Candle[], used: { oi: boolean; dvol: boolean; vix: boolean }): Promise<{ candles: Candle[]; note: string; missed: string[] }> {
+  if (!used.oi && !used.dvol && !used.vix) return { candles, note: '', missed: [] }
+  const step = DEEP_STEP[interval] ?? 3_600_000
+  const from = (candles[0] as Candle).t
+  const get = deepGet($)
+  const symbol = bybitSymbol(coin)
+  const missed: string[] = []
+  const absent: string[] = []
+  const oiIv = interval === '1w' ? '1d' : interval === '1m' ? '5m' : interval
+  let oiError = ''
+  // Bybit gives 200 points a page, read in 6 slices side by side at about 0.3 s a page.
+  const oiPages = Math.ceil(candles.length / 200 / 6)
+  if (used.oi && oiPages > 8 && !(await deepLoad($, `${symbol}_oi_${oiIv}.json`))) $.ui.toast(`Reading ${coin}'s open interest from Bybit, up to about ${Math.max(5, Math.ceil((oiPages * 0.3) / 5) * 5)} s the first time.`)
+  const oi = used.oi ? await deepSeries($, `${symbol}_oi_${oiIv}.json`, from, 3_600_000, (a, b) => readOi(get, symbol, oiIv, a, b), e => (oiError = e)) : undefined
+  if (used.oi && !oi) (/symbol/i.test(oiError) ? absent : missed).push(/symbol/i.test(oiError) ? `Bybit has no open interest for ${coin}, so conditions on it find nothing there.` : 'open interest (Bybit was busy)')
+  const cur = dvolCurrency(coin)
+  const dvol = used.dvol ? await deepSeries($, `dvol_${cur}.json`, from, 6 * 3_600_000, (a, b) => readDvol(get, cur, a, b)) : undefined
+  if (used.dvol && !dvol) missed.push('DVOL (Deribit was busy)')
+  const vix = used.vix ? await deepSeries($, 'vix.json', from, 12 * 3_600_000, async () => parseVix(await get(VIX_URL))) : undefined
+  if (used.vix && !vix) missed.push('VIX (FRED was busy)')
+  const x = withExtras(candles, step, { ...(oi ? { oi } : {}), ...(dvol ? { dvol } : {}), ...(vix ? { vix } : {}) })
+  const known = (k: 'oi' | 'dv' | 'vx') => x.find(c => c[k] !== null && c[k] !== undefined)?.t
+  const since: string[] = []
+  if (oi) since.push(`open interest from ${utcText(known('oi') ?? from).slice(0, 10)}`)
+  if (dvol) since.push(`DVOL from ${utcText(known('dv') ?? from).slice(0, 10)}${coin !== 'BTC' && coin !== 'ETH' ? ' (BTC\'s, the crypto-wide gauge)' : ''}`)
+  if (vix) since.push(`VIX from ${utcText(known('vx') ?? from).slice(0, 10)}`)
+  const note = [since.length ? `Read: ${since.join(', ')}; candles before that don't count for it.` : '', missed.length ? `Not read just now: ${missed.join(', ')}; ask again in a minute.` : '', ...absent].filter(s => s !== '').join(' ')
+  return { candles: x, note, missed }
+}
+
+/** The candles and funding a history question runs on: Hyperliquid's own (5000 candles) or years of Binance's ("deep"). */
+async function labHistory($: EngineInterface, coin: string, interval: string, deep: boolean): Promise<Candle[] | { error: string; isRefused?: boolean }> {
+  if (deep) return deepCandles($, coin, interval)
+  const got = await historyCandles($, coin, interval)
+  return got ?? { error: `Could not read ${coin} ${interval} history from Hyperliquid just now; try again in a minute.` }
+}
+
+/** A history read's error as said to the member: a refused deep read ends with where to go instead. */
+function historyError(got: { error: string; isRefused?: boolean }): string {
+  return got.isRefused ? `${got.error}\nNext: the same without "deep" runs on Hyperliquid's own candles.` : got.error
+}
+
+async function labFunding($: EngineInterface, coin: string, from: number, deep: boolean, quiet = false): Promise<{ rows: Funding[]; settled?: Point[]; isComplete: boolean }> {
+  return deep ? deepFunding($, coin, from) : fundingRows($, coin, from, quiet)
+}
+
+/**
+ * Funding on the candles for conditions: Hyperliquid's hourly rows as they are. Binance's settle every 8 (or 4, 1) hours
+ * and are spread back over the hours before, so under a day a candle reads only the latest one settled by its close.
+ */
+function fundingOn(candles: readonly Candle[], read: { rows: Funding[]; settled?: Point[] }, interval: string): Candle[] {
+  const step = DEEP_STEP[interval] ?? 3_600_000
+  return read.settled && step < 86_400_000 ? withSettledFunding(candles, read.settled, step) : withFunding(candles, read.rows)
+}
+
+/** "deep" or "years" anywhere in a command's words: the flag, and the words without it. */
+export function deepWord(args: string): { deep: boolean; rest: string } {
+  const m = /(^|\s)(deep|years)(?=\s|$)/i.exec(args)
+  return m ? { deep: true, rest: `${args.slice(0, m.index)} ${args.slice(m.index + m[0].length)}`.replace(/\s+/g, ' ').trim() } : { deep: false, rest: args }
+}
+
 /** The coin and interval a history question is about: as asked, else the chart's. */
 async function historyTarget($: EngineInterface, coinRaw: unknown, intervalRaw: unknown, fromCondition: string | null): Promise<{ coin: string; interval: string } | { error: string }> {
   const view = await read($, chart)
   let coin = view?.coin ?? 'BTC'
   if (typeof coinRaw === 'string' && coinRaw.trim() !== '') {
-    const found = resolveCoin(await marketNow($).catch(() => null), coinRaw)
-    if (!found) return { error: `No Hyperliquid perp named ${coinRaw}.` }
+    const m = await marketNow($).catch(() => null)
+    if (!m) return { error: `Hyperliquid is not answering just now, so ${coinRaw.trim()} could not be checked. Next: ask again in a minute.` }
+    const found = resolveCoin(m, coinRaw)
+    if (!found) return { error: `No Hyperliquid perp named ${coinRaw}. Next: the same with a listed coin, e.g. BTC, ETH or SOL.` }
     coin = found
   }
   const iv = typeof intervalRaw === 'string' ? intervalOf(intervalRaw) : null
@@ -565,7 +810,7 @@ async function pinLayer($: EngineInterface, coin: string, interval: string, name
   return layerMarks(r.next.filter(l => l.name === name), coin, candles).filter(m => m.kind === 'pin').length
 }
 
-async function runAfter($: EngineInterface, input: { when?: unknown; coin?: unknown; interval?: unknown; ahead?: unknown; mark?: unknown }): Promise<string> {
+async function runAfter($: EngineInterface, input: { when?: unknown; coin?: unknown; interval?: unknown; ahead?: unknown; mark?: unknown; deep?: unknown }): Promise<string> {
   if (typeof input.when !== 'string' || input.when.trim() === '') return 'Say the condition, e.g. "rsi < 30", "close crosses above ema 200 on 4h", or two joined by "and".'
   const cond = parseCondition(input.when)
   if ('error' in cond) return cond.error
@@ -574,23 +819,31 @@ async function runAfter($: EngineInterface, input: { when?: unknown; coin?: unkn
   const { coin, interval } = target
   const a = Number(input.ahead)
   const ahead = Number.isFinite(a) && a >= 1 ? Math.min(AHEAD_MAX, Math.round(a)) : AHEAD_DEFAULT
-  const read = await historyCandles($, coin, interval)
-  if (!read || read.length < 50) return `Could not read ${coin} ${interval} history from Hyperliquid just now; try again in a minute.`
+  const deep = input.deep === true
+  const read = await labHistory($, coin, interval, deep)
+  if ('error' in read) return historyError(read)
+  if (read.length < 50) return `Could not read ${coin} ${interval} history just now; try again in a minute.`
   let candles = read
-  let fundLine = ''
+  const notes: string[] = []
   if (cond.usesFunding) {
-    const rows = await fundingRows($, coin, Math.max((read[0] as Candle).t, (await $.clock.now()) - 3 * 365 * 86_400_000))
-    candles = withFunding(read, rows.rows)
-    fundLine = fundingNote(candles, rows.isComplete)
+    const rows = await labFunding($, coin, Math.max((read[0] as Candle).t, deep ? 0 : (await $.clock.now()) - 3 * 365 * 86_400_000), deep)
+    candles = fundingOn(read, rows, interval)
+    notes.push(fundingNote(candles, rows.isComplete, deep ? 'Binance' : 'Hyperliquid'))
   }
+  const used = extrasOf(cond.text)
+  const extra = await attachExtras($, coin, interval, candles, used)
+  candles = extra.candles
+  notes.push(extra.note)
+  const fundLine = notes.filter(x => x !== '').join('\n')
   const study = afterStudy(cond, candles, ahead)
   let onChart = 0
   if (input.mark !== false && study.cases.length > 0) {
     const pins = study.cases.slice(-200).map(x => ({ time: x.t, dir: x.ret >= 0 ? 'up' : 'down', label: pct(x.ret, 1) }))
     onChart = await pinLayer($, coin, interval, 'cases', { pins, color: '#ff9800' })
   }
-  const next = `Next: /${TEST_COMMAND} ${cond.said} hold ${ahead} turns it into a test with fees and funding, or /${LIKE_COMMAND} finds moments like now.`
-  return `${afterText(cond, coin, interval, ahead, study, onChart)}\n${fundLine ? `${fundLine}\n` : ''}${next}\n${DATA_LINE}`
+  const years = deep ? '' : ' Add "deep" for years of Binance history kept on this PC.'
+  const next = `Next: /${TEST_COMMAND} ${cond.said} hold ${ahead}${deep ? ' deep' : ''} turns it into a test with fees and funding, or /${LIKE_COMMAND} finds moments like now.${years}`
+  return `${afterText(cond, coin, interval, ahead, study, onChart)}\n${fundLine ? `${fundLine}\n` : ''}${next}\n${sourcesLine(deep, used)}`
 }
 
 /** The next shorter interval: more candles over the same months. */
@@ -662,13 +915,169 @@ export function parseTestWords(args: string): { enter: string; exit?: string; ho
 
 /** The try counter: each different test on a coin and interval counts once, kept across sessions. */
 async function countTry($: EngineInterface, where: string, key: string): Promise<number> {
+  return countTries($, where, [key])
+}
+
+/**
+ * One try in the ledger: its key, its words (to run it again), whether it has looked at the unseen part, and for a
+ * swarm's rules the time of the first candle its search did not look at (a later test with an earlier seal counts it).
+ */
+type LedgerRow = { k: string; w: string; u: 0 | 1; s?: number }
+
+/** Per coin and interval: tries from before the ledger kept words, and tries that mattered but had to go (n, latest s). */
+type LedgerMeta = { legacy?: number; n?: number; s?: number }
+
+async function ledgerAll($: EngineInterface): Promise<Record<string, LedgerRow[]>> {
+  const saved = (await $.store.get('ledger').catch(() => undefined)) as Record<string, unknown> | undefined
+  const out: Record<string, LedgerRow[]> = {}
+  for (const [k, v] of Object.entries(saved && typeof saved === 'object' ? saved : {}))
+    if (Array.isArray(v))
+      out[k] = v
+        .filter((x): x is LedgerRow => !!x && typeof x === 'object' && typeof (x as LedgerRow).w === 'string')
+        .map(x => ({ k: typeof x.k === 'string' ? x.k : wordsKey(x.w), w: x.w, u: x.u === 1 ? 1 : 0, ...(typeof x.s === 'number' && Number.isFinite(x.s) ? { s: x.s } : {}) }))
+  return out
+}
+
+/** A ledger row's key from its words (rows are saved without it, to keep the store small). */
+function wordsKey(w: string): string {
+  const t = parseTestWords(w)
+  const spec = t ? parseTest(t) : null
+  return spec && !('error' in spec) ? specKey(spec) : w
+}
+
+/** The line when the desk's store is full and a try was not kept. */
+function fullNote(where: string): string {
+  return `The desk's saved notes are full, so this try was not kept and later luck checks on ${where} won't count it. Next: remove_layers or clearing old TradingView alerts makes room.`
+}
+
+/** A try's key as kept in the counter: a short hash, so 300 of them stay small. */
+function tryKey(k: string): string {
+  return `#${seedOf(k).toString(36)}`
+}
+
+async function ledgerMeta($: EngineInterface): Promise<Record<string, LedgerMeta>> {
+  const saved = (await $.store.get('ledgerMeta').catch(() => undefined)) as Record<string, unknown> | undefined
+  const out: Record<string, LedgerMeta> = {}
+  for (const [k, v] of Object.entries(saved && typeof saved === 'object' ? saved : {}))
+    if (v && typeof v === 'object') {
+      const m = v as Record<string, unknown>
+      const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined)
+      out[k] = { ...(num(m.legacy) !== undefined ? { legacy: num(m.legacy) } : {}), ...(num(m.n) !== undefined ? { n: num(m.n) } : {}), ...(num(m.s) !== undefined ? { s: num(m.s) } : {}) }
+    }
+  return out
+}
+
+/**
+ * The tries on a coin and interval that have looked at the unseen part from `cutT` on, as tests to run again: those
+ * that saw it, and swarm rules whose search ran past `cutT`. And how many count but can't be run again.
+ */
+async function ledgerOthers($: EngineInterface, where: string, current?: string, cutT?: number): Promise<{ others: TestSpec[]; older: number }> {
+  const ledger = await ledgerAll($)
+  const rows = ledger[where] ?? []
+  const others: TestSpec[] = []
+  let failed = 0
+  for (const r of rows) {
+    if (r.u !== 1 && !(cutT !== undefined && (r.s ?? 0) > cutT)) continue
+    const t = parseTestWords(r.w)
+    const spec = t ? parseTest(t) : null
+    if (spec && !('error' in spec)) others.push(spec)
+    else failed++
+  }
+  const meta = (await ledgerMeta($))[where] ?? {}
+  // Tries counted before the ledger kept their words (1.2): they count in the tries, but can't be run again.
+  let legacy = meta.legacy ?? 0
+  if (meta.legacy === undefined && !(where in ledger)) {
+    const saved = (await $.store.get('tries').catch(() => undefined)) as Record<string, unknown> | undefined
+    const keys = saved && typeof saved === 'object' && Array.isArray(saved[where]) ? (saved[where] as unknown[]).filter((x): x is string => typeof x === 'string') : []
+    legacy = keys.filter(k => k !== current && !k.startsWith('#') && !k.startsWith('alert rule: ')).length
+  }
+  const dropped = meta.n && (cutT === undefined || (meta.s ?? 0) > cutT) ? meta.n : 0
+  return { others, older: failed + legacy + dropped }
+}
+
+/** Every try in the ledger for a coin and interval that can be run again, whether it saw the unseen part, and how far it searched. */
+async function ledgerPrior($: EngineInterface, where: string): Promise<{ spec: TestSpec; sawUnseen: boolean; s?: number }[]> {
+  const out: { spec: TestSpec; sawUnseen: boolean; s?: number }[] = []
+  for (const r of (await ledgerAll($))[where] ?? []) {
+    const t = parseTestWords(r.w)
+    const spec = t ? parseTest(t) : null
+    if (spec && !('error' in spec)) out.push({ spec, sawUnseen: r.u === 1, ...(r.s !== undefined ? { s: r.s } : {}) })
+  }
+  return out
+}
+
+/**
+ * Puts tries in the ledger (or marks them as having seen the unseen part), newest last, MAX_TRIES_KEPT at most. Tries
+ * that saw the unseen part stay first, then swarm rules that searched past a seal, then the rest. One that mattered and
+ * still had to go is counted in ledgerMeta, so the luck line says so instead of judging as if it never happened.
+ */
+async function ledgerAdd($: EngineInterface, where: string, specs: readonly { spec: TestSpec; sawUnseen: boolean; s?: number }[]): Promise<boolean> {
+  const all = await ledgerAll($)
+  const isNew = !(where in all)
+  let rows = all[where] ?? []
+  for (const { spec, sawUnseen, s: searched } of specs) {
+    const k = specKey(spec)
+    const old = rows.find(r => r.k === k)
+    const s = Math.max(old?.s ?? 0, searched ?? 0)
+    if (old) rows = rows.filter(r => r !== old)
+    rows.push({ k, w: old?.w ?? specWords(spec), u: sawUnseen || old?.u === 1 ? 1 : 0, ...(s > 0 ? { s } : {}) })
+  }
+  const u1 = rows.filter(r => r.u === 1).slice(-MAX_TRIES_KEPT)
+  const room = MAX_TRIES_KEPT - u1.length
+  const withS = room > 0 ? rows.filter(r => r.u !== 1 && r.s !== undefined).slice(-room) : []
+  const rest = room - withS.length
+  const keep = new Set([...u1, ...withS, ...(rest > 0 ? rows.filter(r => r.u !== 1 && r.s === undefined).slice(-rest) : [])])
+  const gone = rows.filter(r => !keep.has(r) && (r.u === 1 || r.s !== undefined))
+  all[where] = rows.filter(r => keep.has(r))
+  const save = Object.fromEntries(Object.entries(all).map(([at, rs]) => [at, rs.map(r => ({ w: r.w, u: r.u, ...(r.s !== undefined ? { s: r.s } : {}) }))]))
+  const isKept = await $.store.set('ledger', save).then(() => true, () => false)
+  if (isNew || gone.length > 0) {
+    const metas = await ledgerMeta($)
+    const m = metas[where] ?? {}
+    if (isNew && m.legacy === undefined) {
+      const saved = (await $.store.get('tries').catch(() => undefined)) as Record<string, unknown> | undefined
+      const keys = saved && typeof saved === 'object' && Array.isArray(saved[where]) ? (saved[where] as unknown[]).filter((x): x is string => typeof x === 'string') : []
+      const adding = new Set(specs.map(x => specKey(x.spec)))
+      m.legacy = keys.filter(k => !adding.has(k) && !k.startsWith('#') && !k.startsWith('alert rule: ')).length
+    }
+    if (gone.length > 0) {
+      m.n = (m.n ?? 0) + gone.length
+      m.s = Math.max(m.s ?? 0, ...gone.map(r => (r.u === 1 ? Number.MAX_SAFE_INTEGER : (r.s ?? 0))))
+    }
+    metas[where] = m
+    await $.store.set('ledgerMeta', metas).catch(() => undefined)
+  }
+  return isKept
+}
+
+/** Counts tries on a coin and interval: each different test once (the newest MAX_TRIES_KEPT keys kept to tell), with a running total past that. */
+async function countTries($: EngineInterface, where: string, keys: readonly string[]): Promise<number> {
   const saved = (await $.store.get('tries').catch(() => undefined)) as Record<string, unknown> | undefined
   const all: Record<string, string[]> = {}
   for (const [k, v] of Object.entries(saved && typeof saved === 'object' ? saved : {})) if (Array.isArray(v)) all[k] = v.filter((x): x is string => typeof x === 'string')
   const list = all[where] ?? []
-  if (!list.includes(key)) all[where] = [...list, key].slice(-MAX_TRIES_KEPT)
+  const set = new Set(list)
+  let added = 0
+  for (const full of keys) {
+    const k = tryKey(full)
+    if (set.has(k) || set.has(full)) continue
+    set.add(k)
+    list.push(k)
+    added++
+  }
+  all[where] = list.slice(-MAX_TRIES_KEPT)
   await $.store.set('tries', all).catch(() => undefined)
-  return (all[where] ?? []).length
+  const totals = ((await $.store.get('triesTotal').catch(() => undefined)) ?? {}) as Record<string, unknown>
+  const before = typeof totals[where] === 'number' ? (totals[where] as number) : list.length - added
+  const total = Math.max(before + added, (all[where] ?? []).length)
+  await $.store.set('triesTotal', { ...(totals && typeof totals === 'object' ? totals : {}), [where]: total }).catch(() => undefined)
+  return total
+}
+
+/** The extra series (open interest, the fear gauges) any of these tests reads. */
+function extrasOfSpecs(specs: readonly TestSpec[]): { oi: boolean; dvol: boolean; vix: boolean } {
+  const text = specs.map(x => `${x.enter.text} ${x.exit?.text ?? ''}`).join(' ')
+  return extrasOf(text)
 }
 
 /** A test as /lab-test words again: entry, exit, hold, side and a fee other than the default. */
@@ -680,24 +1089,37 @@ export function testWords(spec: TestSpec): string {
 /** Most coins in one test across coins: each may need its funding read first. */
 const ACROSS_MAX = 5
 
-async function runTestTool($: EngineInterface, input: { enter?: unknown; exit?: unknown; hold?: unknown; side?: unknown; fee?: unknown; coin?: unknown; coins?: unknown; interval?: unknown; mark?: unknown }): Promise<string> {
-  const spec = parseTest(input)
-  if ('error' in spec) return spec.error
+async function runTestTool($: EngineInterface, input: { enter?: unknown; exit?: unknown; hold?: unknown; side?: unknown; fee?: unknown; coin?: unknown; coins?: unknown; interval?: unknown; mark?: unknown; deep?: unknown }): Promise<string> {
+  const parsed = parseTest(input)
+  if ('error' in parsed) return parsed.error
+  const deep = input.deep === true
+  // Deep history is Binance's, so its taker fee (0.05% a side) unless one is given.
+  const spec: TestSpec = deep && input.fee === undefined ? { ...parsed, fee: BINANCE_FEE } : parsed
   const asked = Array.isArray(input.coins) ? input.coins.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : typeof input.coins === 'string' ? input.coins.split(/[\s,]+/).filter(w => w !== '') : []
-  if (asked.length >= 2) return runAcross($, spec, input, asked)
+  if (asked.length >= 2) return runAcross($, spec, input, asked, deep)
   const target = await historyTarget($, input.coin, input.interval, spec.enter.interval ?? spec.exit?.interval ?? null)
   if ('error' in target) return target.error
   const { coin, interval } = target
-  const candles = await historyCandles($, coin, interval)
-  if (!candles) return `Could not read ${coin} ${interval} history from Hyperliquid just now; try again in a minute.`
+  const got = await labHistory($, coin, interval, deep)
+  if ('error' in got) return historyError(got)
+  const candles = got
   if (candles.length < 200) return `Test: ${coin} ${interval} has only ${candles.length} closed candles so far, too few for seen and unseen parts (200 needed). Next: a shorter interval has more candles, e.g. on ${SHORTER[interval] ?? '1h'}.`
-  const read = await fundingRows($, coin, Math.max((candles[0] as Candle).t, (await $.clock.now()) - 3 * 365 * 86_400_000))
-  const tries = await countTry($, `${coin} ${interval}`, specKey(spec))
-  const usesFunding = spec.enter.usesFunding || spec.exit?.usesFunding === true
-  const tested = usesFunding ? withFunding(candles, read.rows) : candles
-  const result = honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, tested, read.rows, tries)
+  const read = await labFunding($, coin, Math.max((candles[0] as Candle).t, deep ? 0 : (await $.clock.now()) - 3 * 365 * 86_400_000), deep)
+  const where = `${coin} ${interval}`
+  const tries = await countTry($, where, specKey(spec))
+  const led = await ledgerOthers($, where, specKey(spec), (candles[cutIndex(spec, candles.length)] as Candle).t)
+  const all = [spec, ...led.others]
+  const usesFunding = all.some(x => x.enter.usesFunding || x.exit?.usesFunding === true)
+  const used = extrasOfSpecs(all)
+  const extra = await attachExtras($, coin, interval, usesFunding ? fundingOn(candles, read, interval) : candles, used)
+  const tested = extra.candles
+  const result = honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, tested, read.rows, tries, { others: led.others, venue: deep ? 'Binance' : 'Hyperliquid' })
   result.isFundingShort = !read.isComplete
-  const fundLine = usesFunding ? fundingNote(tested, true) : ''
+  result.older = led.older
+  const isKept = await ledgerAdd($, where, [{ spec, sawUnseen: true }])
+  const notes = [isKept ? '' : fullNote(where), usesFunding ? fundingNote(tested, true) : '', extrasOfSpecs([spec]).oi || extrasOfSpecs([spec]).dvol || extrasOfSpecs([spec]).vix ? extra.note : '']
+  if (led.older > 0) notes.push(`${led.older} earlier ${led.older === 1 ? 'try' : 'tries'} on ${where} could not be run again, so the luck check leaves ${led.older === 1 ? 'it' : 'them'} out and is a little kinder than it should be.`)
+  const fundLine = notes.filter(x => x !== '').join('\n')
   let onChart = 0
   if (input.mark !== false && result.unseen.n > 0) {
     const trades = result.unseen.trades
@@ -705,19 +1127,29 @@ async function runTestTool($: EngineInterface, input: { enter?: unknown; exit?: 
     const spans = trades.slice(-20).map(t => ({ from: t.t, to: t.t2 }))
     onChart = await pinLayer($, coin, interval, 'test', { pins, spans, color: '#8bc34a' })
   }
+  const d = deep ? ' deep' : ''
+  const own = extrasOfSpecs([spec])
+  const ownMissed = extra.missed.filter(m => (own.oi && m.startsWith('open interest')) || (own.dvol && m.startsWith('DVOL')) || (own.vix && m.startsWith('VIX')))
+  result.isExtraMissing = ownMissed.length > 0
+  const held = result.luck?.survives === true && result.unseen.total > 0 && result.unseen.avg > 0
   const next =
-    result.unseen.n < MIN_UNSEEN
-      ? `Next: ask Claude "loosen the entry a little so the test has more unseen trades" (each change counts as a try).`
-      : `Next: the fairest check is other coins: /${TEST_COMMAND} ${testWords(spec)} across ${coin === 'BTC' ? 'ETH SOL' : `BTC ${coin === 'ETH' ? 'SOL' : 'ETH'}`} on ${interval} (each coin counts as a try).`
-  return `${testText(result, coin, interval, onChart)}\n${fundLine ? `${fundLine}\n` : ''}${next}\n${DATA_LINE}`
+    result.unseen.n < MIN_UNSEEN && ownMissed.length > 0
+      ? `Next: the same test again in a minute (no new try): ${ownMissed.map(m => m.replace(/ \(.*\)$/, '')).join(', ')} could not be read just now.`
+      : result.unseen.n < MIN_UNSEEN
+        ? `Next: ${deep ? 'ask Claude "loosen the entry a little so the test has more unseen trades"' : `/${TEST_COMMAND} ${testWords(spec)} deep runs it on years of Binance candles`} (each change counts as a try).`
+        : held
+          ? `Next: the fairest check is other coins: /${TEST_COMMAND} ${testWords(spec)} across ${coin === 'BTC' ? 'ETH SOL' : `BTC ${coin === 'ETH' ? 'SOL' : 'ETH'}`} on ${interval}${d} (each coin counts as a try).`
+          : `Next: ask Claude "find me something different on ${coin} ${interval}${d}" and it writes a swarm of new rules (each counts as a try).`
+  return `${testText(result, coin, interval, onChart)}\n${fundLine ? `${fundLine}\n` : ''}${next}\n${sourcesLine(deep, used)}`
 }
 
 /** The same test on 2 to 5 coins: each coin's unseen part, how many held, and how likely luck gives that. */
-async function runAcross($: EngineInterface, spec: TestSpec, input: { enter?: unknown; exit?: unknown; interval?: unknown }, asked: readonly string[]): Promise<string> {
+async function runAcross($: EngineInterface, spec: TestSpec, input: { enter?: unknown; exit?: unknown; interval?: unknown }, asked: readonly string[], deep = false): Promise<string> {
   const target = await historyTarget($, undefined, input.interval, spec.enter.interval ?? spec.exit?.interval ?? null)
   if ('error' in target) return target.error
   const { interval } = target
   const market = await marketNow($).catch(() => null)
+  if (!market) return 'Hyperliquid is not answering just now, so the coins could not be checked. Next: ask again in a minute.'
   const coins: string[] = []
   const rows: CoinRow[] = []
   for (const typed of asked) {
@@ -727,31 +1159,126 @@ async function runAcross($: EngineInterface, spec: TestSpec, input: { enter?: un
   }
   const left = coins.slice(ACROSS_MAX)
   const now = await $.clock.now()
-  const fresh = coins.slice(0, ACROSS_MAX).filter(c => !fundingCache.has(c)).length
+  const fresh = deep ? 0 : coins.slice(0, ACROSS_MAX).filter(c => !fundingCache.has(c)).length
   // About half a second per page of 500 funding hours over the unseen 30% of what 5000 candles cover, and the candles.
   const span = Math.min(HISTORY_CANDLES * (INTERVALS[interval] ?? 3_600_000), 3 * 365 * 86_400_000) * (1 - SEEN_SHARE)
   const secs = Math.max(5, Math.round((fresh * (span / (500 * 3_600_000) / 2 + 2)) / 5) * 5)
   if (fresh > 0) $.ui.toast(`Testing ${Math.min(coins.length, ACROSS_MAX)} coins: reading history and funding for ${fresh} of them first, about ${secs} s, then kept for this session.`)
+  const used = extrasOfSpecs([spec])
+  let isRefused = false
+  let isFull = false
   for (const coin of coins.slice(0, ACROSS_MAX)) {
-    const candles = await historyCandles($, coin, interval)
-    if (!candles) rows.push({ coin, r: null, note: 'could not read its history just now' })
-    else if (candles.length < 200) rows.push({ coin, r: null, note: `only ${candles.length} closed candles, too few (200 needed)` })
+    const got = await labHistory($, coin, interval, deep)
+    if ('error' in got) isRefused ||= got.isRefused === true
+    if ('error' in got) rows.push({ coin, r: null, note: deep ? got.error.replace(/\.$/, '') : 'could not read its history just now' })
+    else if (got.length < 200) rows.push({ coin, r: null, note: `only ${got.length} closed candles, too few (200 needed)` })
     else {
       // Only the unseen part is shown across coins, so funding is read from its start: a quarter of the pages.
-      const cutT = (candles[cutIndex(spec, candles.length)] as Candle).t
-      const read = await fundingRows($, coin, Math.max(cutT, now - 3 * 365 * 86_400_000), true)
+      const cutT = (got[cutIndex(spec, got.length)] as Candle).t
+      const read = await labFunding($, coin, Math.max(cutT, deep ? 0 : now - 3 * 365 * 86_400_000), deep, true)
       if (!read.isComplete) {
-        rows.push({ coin, r: null, note: 'Hyperliquid was busy and its funding could not all be read; ask again in a minute' })
+        rows.push({ coin, r: null, note: `${deep ? 'Binance' : 'Hyperliquid'} was busy and its funding could not all be read; ask again in a minute` })
         continue
       }
-      const tries = await countTry($, `${coin} ${interval}`, specKey(spec))
-      const tested = spec.enter.usesFunding || spec.exit?.usesFunding === true ? withFunding(candles, read.rows) : candles
-      rows.push({ coin, r: honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, tested, read.rows, tries) })
+      const where = `${coin} ${interval}`
+      const tries = await countTry($, where, specKey(spec))
+      const led = await ledgerOthers($, where, specKey(spec), cutT)
+      const all = [spec, ...led.others]
+      const usesFunding = all.some(x => x.enter.usesFunding || x.exit?.usesFunding === true)
+      const extra = await attachExtras($, coin, interval, usesFunding ? fundingOn(got, read, interval) : got, extrasOfSpecs(all))
+      rows.push({ coin, r: honestTest(spec, { enter: String(input.enter), ...(typeof input.exit === 'string' ? { exit: input.exit } : {}) }, extra.candles, read.rows, tries, { others: led.others, venue: deep ? 'Binance' : 'Hyperliquid' }) })
+      if (!(await ledgerAdd($, where, [{ spec, sawUnseen: true }]))) isFull = true
     }
   }
+  const full = isFull ? `\n${fullNote(`these coins on ${interval}`)}` : ''
   const more = left.length > 0 ? `\n${left.join(', ')} left out: ${ACROSS_MAX} coins at most in one test.` : ''
-  const next = `Next: one coin on its own pins its unseen trades on the chart: /${TEST_COMMAND} ${testWords(spec)} on ${interval}.`
-  return `${acrossText(rows, interval)}${more}\n${next}\n${DATA_LINE}`
+  const next = `Next: one coin on its own pins its unseen trades on the chart: /${TEST_COMMAND} ${testWords(spec)} on ${interval}${deep && !isRefused ? ' deep' : ''}.`
+  return `${acrossText(rows, interval)}${more}${full}\n${next}\n${sourcesLine(deep, used)}`
+}
+
+/** The Swarm: 2 to 200 rules on one coin, judged together on the seen part; the unseen part opened for those that beat luck. */
+async function runSwarmTool($: EngineInterface, input: { rules?: unknown; coin?: unknown; interval?: unknown; deep?: unknown; fee?: unknown; mark?: unknown }): Promise<string> {
+  // Named rules ("Dip: rsi < 30 hold 6") keep only the rule.
+  const list = Array.isArray(input.rules) ? input.rules.filter((x): x is string => typeof x === 'string' && x.trim() !== '').map(x => x.replace(/^[^:]{1,40}:\s*/, '')) : typeof input.rules === 'string' ? splitRules(input.rules) : []
+  const deep = input.deep === true
+  const usage = `Swarm: give ${SWARM_MIN} to ${SWARM_MAX} rules, e.g. /${SWARM_COMMAND} SOL 4h deep: rsi < 30 hold 10; ema 20 crosses above ema 50 hold 24; rsi > 70 hold 6 short.\nNext: ask Claude "find me something on SOL 4h" and it writes them.`
+  // Rules joined with commas read as one rule; a comma inside ( ) belongs to a formula, so only those outside count.
+  const commaHint = (xs: readonly string[]) => (xs.some(x => x.replace(/\([^()]*\)/g, '').replace(/\bacross\b.*$/i, '').includes(',')) ? ' Put ; or a new line between rules, not a comma.' : '')
+  if (list.length < SWARM_MIN) return `${usage}${commaHint(list)}`
+  const all: { w: string; spec: TestSpec; iv: string | null }[] = []
+  const skipped: string[] = []
+  const heard = new Set<string>()
+  let asked: string | null = null
+  let isAcross = false
+  for (const w of list) {
+    const t = parseTestWords(w)
+    const parsed = t ? parseTest({ ...t, ...(t.fee === undefined && input.fee !== undefined ? { fee: input.fee } : {}) }) : null
+    if (!t || !parsed || 'error' in parsed) {
+      skipped.push(w)
+      continue
+    }
+    if (t.coins?.length) isAcross = true
+    const iv = t.interval ?? parsed.enter.interval ?? null
+    asked ??= iv
+    const spec = deep && t.fee === undefined && input.fee === undefined ? { ...parsed, fee: BINANCE_FEE } : parsed
+    const k = `${specKey(spec)} ${iv ?? ''}`
+    if (heard.has(k)) continue
+    heard.add(k)
+    all.push({ w: w.trim(), spec, iv })
+  }
+  if (all.length < SWARM_MIN) return `${usage}${skipped.length ? ` Not understood: ${skipped.slice(0, 3).join(' · ')}.` : ''}${commaHint(skipped)}`
+  const target = await historyTarget($, input.coin, input.interval, asked)
+  if ('error' in target) return target.error
+  const { coin, interval } = target
+  // A rule that names another interval is left out, not quietly run on this one; past SWARM_MAX rules, said too.
+  const elsewhere = all.filter(r => r.iv !== null && r.iv !== interval)
+  const specs: TestSpec[] = []
+  const over: string[] = []
+  const keys = new Set<string>()
+  for (const r of all) {
+    if (r.iv !== null && r.iv !== interval) continue
+    const k = specKey(r.spec)
+    if (keys.has(k)) continue
+    keys.add(k)
+    if (specs.length >= SWARM_MAX) over.push(r.w)
+    else specs.push(r.spec)
+  }
+  const away = elsewhere.length > 0 ? `On another interval than ${interval}, left out: ${elsewhere.slice(0, 5).map(r => r.w).join(' · ')}${elsewhere.length > 5 ? ` and ${elsewhere.length - 5} more` : ''}.` : ''
+  if (specs.length < SWARM_MIN) return `Swarm: only ${specs.length} rule${specs.length === 1 ? '' : 's'} on ${coin} ${interval}, ${SWARM_MIN} needed. ${away}\nNext: one swarm per interval, e.g. /${SWARM_COMMAND} ${coin} ${elsewhere[0]?.iv ?? interval}: then the rules for it.`
+  const overNote = over.length > 0 ? `${over.length === 1 ? '1 rule' : `${over.length} rules`} left out: ${SWARM_MAX} rules at most in one swarm (${over.slice(0, 3).join(' · ')}${over.length > 3 ? ` and ${over.length - 3} more` : ''}).` : ''
+  const acrossNote = isAcross ? `A swarm runs on one coin, so "across" was left out: all ran on ${coin}. One rule on more coins: /${TEST_COMMAND} <rule> across BTC ETH SOL.` : ''
+  const got = await labHistory($, coin, interval, deep)
+  if ('error' in got) return historyError(got)
+  if (got.length < 300) return `Swarm: ${coin} ${interval} has only ${got.length} closed candles, too few to search (300 needed). Next: a shorter interval, or "deep" for years of Binance candles.`
+  const read = await labFunding($, coin, Math.max((got[0] as Candle).t, deep ? 0 : (await $.clock.now()) - 3 * 365 * 86_400_000), deep)
+  const usesFunding = specs.some(x => x.enter.usesFunding || x.exit?.usesFunding === true)
+  const used = extrasOfSpecs(specs)
+  const extra = await attachExtras($, coin, interval, usesFunding ? fundingOn(got, read, interval) : got, used)
+  const where = `${coin} ${interval}`
+  const result = runSwarm(specs, extra.candles, read.rows, undefined, await ledgerPrior($, where))
+  await countTries($, where, specs.map(specKey))
+  const isKept = await ledgerAdd($, where, result.rows.map(r => ({ spec: r.spec, sawUnseen: r.unseen !== undefined, s: result.cutT })))
+  const notes = [away, overNote, acrossNote, usesFunding ? fundingNote(extra.candles, read.isComplete, deep ? 'Binance' : 'Hyperliquid') : '', extra.note, isKept ? '' : fullNote(where)].filter(x => x !== '')
+  const best = result.rows.filter(r => r.unseen).sort((a, b) => b.t - a.t)[0]
+  let pinned = ''
+  if (best?.unseen && best.unseen.n > 0 && input.mark !== false) {
+    const trades = best.unseen.trades
+    const pins = trades.slice(-200).map(t => ({ time: t.t, dir: best.spec.side === 'long' ? 'up' : 'down', label: pct(t.ret, 1) }))
+    const n = await pinLayer($, coin, interval, 'swarm', { pins, spans: trades.slice(-20).map(t => ({ from: t.t, to: t.t2 })), color: '#e040fb' })
+    if (n > 0) pinned = `${n} unseen trade${n === 1 ? '' : 's'} of the strongest pinned on the chart (layer "swarm").`
+  }
+  const d = deep ? ' deep' : ''
+  const u = result.unseenP
+  const top = u ? (result.rows.find(r => r.words === u.best) ?? best) : best
+  const isHeld = u !== null && (u.n < MIN_UNSEEN || (u.held && u.avg > 0))
+  const next = top && isHeld
+    ? `Next: the fairest check is other coins: /${TEST_COMMAND} ${testWords(top.spec)} across ${coin === 'BTC' ? 'ETH SOL' : `BTC ${coin === 'ETH' ? 'SOL' : 'ETH'}`} on ${interval}${d}.`
+    : best
+      ? `Next: ask Claude for a swarm of a different kind (funding, open interest, the fear gauges, or the other side)${deep ? '' : ', with "deep" for years of candles'}; the unseen part said no to the strongest, so it is crossed off.`
+      : result.few === result.rows.length
+      ? `Next: looser entries or a shorter interval${deep ? '' : ', or "deep" for years of candles'}, so the rules get ${MIN_SCORED}+ trades to judge.`
+      : `Next: ask Claude for a swarm of a different kind (funding, open interest, the fear gauges, or the other side)${deep ? '' : ', with "deep" for years of candles'}; every rule tried raises the bar a little, which is the point.`
+  return [swarmText(result, coin, interval, deep ? 'Binance' : 'Hyperliquid', skipped), ...notes, pinned, next, sourcesLine(deep, used)].filter(x => x !== '').join('\n')
 }
 
 /** The next step as the prompt box's dim suggestion; while the command's own turn still holds the box, once more a moment later. */
@@ -1393,6 +1920,9 @@ function startBand($: EngineInterface) {
 // address never goes to DaviddTech. Nothing here places or sends an order.
 export const TV_COMMAND = 'lab-tv'
 export const TRADES_COMMAND = 'lab-trades'
+export const RULES_COMMAND = 'lab-rules'
+export const LOOK_COMMAND = 'lab-second-look'
+export const LOOK_TOOL_NAME = 'mcp__lab-desk__chart_second_look'
 export const ALERTS_TOOL_NAME = 'mcp__lab-desk__chart_alerts'
 export const TRADES_TOOL_NAME = 'mcp__lab-desk__chart_trades'
 /** Groups scored in one summary, each reading its coin's history and funding. */
@@ -1400,15 +1930,17 @@ const SCORE_GROUPS = 6
 /** Fill pages read at most (2000 fills each). */
 const FILL_PAGES = 5
 
-const tv: { feed: string | null; kept: TvAlert[]; timer: Timer | null; busy: boolean; isGone: boolean; wallet: string | null; fills: Fill[]; fillsAt: number } = {
+const tv: { feed: string | null; kept: TvAlert[]; timer: Timer | null; busy: boolean; isGone: boolean; wallet: string | null; fillsOf: string | null; fills: Fill[]; fillsAt: number; fillsFrom: number } = {
   feed: null,
   kept: [],
   timer: null,
   busy: false,
   isGone: false,
   wallet: null,
+  fillsOf: null,
   fills: [],
   fillsAt: 0,
+  fillsFrom: 0,
 }
 
 const ALERTS_TOOL = {
@@ -1438,8 +1970,26 @@ const TRADES_TOOL = {
   inputSchema: {
     type: 'object',
     properties: {
-      wallet: { type: 'string', description: 'A 0x address to use instead of the one set with /lab-trades (kept on this PC)' },
+      wallet: { type: 'string', description: 'Another public 0x address to read once instead of their own (not kept; their own stays the one set with /lab-trades)' },
+      review: { type: 'boolean', description: 'The trade review instead: where their trips did worse than their own usual (time of day, weekday, coin, side, after a loss or a win, size, how long held), each gap checked against chance' },
     },
+  },
+  isDeferred: false,
+} as const
+
+const LOOK_TOOL = {
+  name: 'chart_second_look',
+  description:
+    'A second look before the person trades: their idea set against their own rules file (/lab-rules), the market now (price, 24h change, funding, rsi, the 1d trend) and the leaks from their own trade review that apply right now. ' +
+    'Use it when they say they are about to open a trade or ask for a second look. It returns a brief; answer it with exactly the 3 strongest reasons against, each naming a rule or a fact, then what would take the strongest away. Never tell them what to trade. Read-only.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      idea: { type: 'string', description: 'The idea in their words, e.g. "long SOL here, it bounced off 180"' },
+      coin: { type: 'string', description: 'The Hyperliquid perp; defaults to a coin named in the idea, then the chart coin' },
+      side: { type: 'string', enum: ['long', 'short'], description: 'Defaults to long or short named in the idea' },
+    },
+    required: ['idea'],
   },
   isDeferred: false,
 } as const
@@ -1619,34 +2169,84 @@ async function tvAlertsTool($: EngineInterface, input: { action?: unknown; name?
     .join('\n')
 }
 
-/** The wallet's perp fills over the last FILLS_DAYS days, in windows of 2000. */
-async function readFills($: EngineInterface, wallet: string): Promise<Fill[] | null> {
+/**
+ * The wallet's perp fills over the last FILLS_DAYS days, in windows of 2000. A wallet with more than FILL_PAGES windows
+ * is read again from later on, so the newest trades are always in (the oldest go); `from` is where the fills start.
+ */
+async function readFills($: EngineInterface, wallet: string): Promise<{ fills: Fill[]; from: number } | null> {
   const now = await $.clock.now()
-  let start = now - FILLS_DAYS * 86_400_000
-  let got: Fill[] = []
-  for (let page = 0; page < FILL_PAGES; page++) {
-    const raw = await post($, JSON.stringify(fillsRequest(wallet, start, now))).catch(() => null)
-    if (!Array.isArray(raw)) return page === 0 ? null : got
-    got = keepFills(got, parseFills(raw))
-    if (raw.length < 2000) break
-    const last = Math.max(...(raw as { time?: unknown }[]).map(x => Number(x.time)).filter(Number.isFinite))
-    if (!Number.isFinite(last) || last <= start) break
-    start = last + 1
+  let from = now - FILLS_DAYS * 86_400_000
+  let best: { fills: Fill[]; from: number } | null = null
+  for (let round = 0; round < 3; round++) {
+    let start = from
+    let got: Fill[] = []
+    let isCut = false
+    for (let page = 0; page < FILL_PAGES; page++) {
+      const raw = await post($, JSON.stringify(fillsRequest(wallet, start, now))).catch(() => null)
+      if (!Array.isArray(raw)) return page === 0 ? best : { fills: got, from }
+      got = keepFills(got, parseFills(raw))
+      if (raw.length < 2000) break
+      const last = Math.max(...(raw as { time?: unknown }[]).map(x => Number(x.time)).filter(Number.isFinite))
+      if (!Number.isFinite(last) || last <= start) break
+      start = last + 1
+      isCut = page === FILL_PAGES - 1
+    }
+    if (!isCut) return { fills: got, from }
+    best = { fills: got, from: got[0]?.time ?? from }
+    from = now - Math.max(86_400_000, (start - from) * 0.8)
   }
-  return got
+  return best
+}
+
+/** The wallet's round trips, its fills read at most once a minute; null when Hyperliquid can't be read. */
+async function tripsOf($: EngineInterface, wallet: string): Promise<Trip[] | null> {
+  const now = await $.clock.now()
+  if (tv.fillsOf !== wallet || now - tv.fillsAt > 60_000) {
+    const read = await readFills($, wallet)
+    if (!read) return null
+    tv.fillsOf = wallet
+    tv.fills = read.fills
+    tv.fillsAt = now
+    tv.fillsFrom = read.from
+  }
+  // Bar replay: only the fills up to the replay point, so no trip gives what came next away.
+  const end = await historyEnd($)
+  return roundTrips(end < now ? tv.fills.filter(f => f.time < end) : tv.fills)
+}
+
+/** "since 2026-10-02" when the read could not reach back FILLS_DAYS days (a very busy wallet), else nothing. */
+function fillsSince(): string | undefined {
+  return tv.fillsFrom > tv.fillsAt - (FILLS_DAYS - 1) * 86_400_000 ? new Date(tv.fillsFrom).toISOString().slice(0, 10) : undefined
+}
+
+/** The trade review of these trips, worked out once per read (the second look asks for it again and again). */
+let reviewMemo: { key: string; r: Review } | null = null
+function reviewOf(trips: readonly Trip[]): Review {
+  const key = `${tv.fillsOf}|${tv.fillsAt}|${trips.length}|${trips.at(-1)?.open ?? 0}|${trips.at(-1)?.close ?? 0}`
+  if (reviewMemo?.key !== key) reviewMemo = { key, r: reviewTrips(trips) }
+  return reviewMemo.r
+}
+
+/** Where the trips did worse than the person's own usual. */
+async function reviewRun($: EngineInterface, wallet: string): Promise<string> {
+  const trips = await tripsOf($, wallet)
+  if (!trips) return `Could not read the trades from Hyperliquid just now; try again in a minute.\n${DATA_LINE}`
+  const r = reviewOf(trips)
+  // A rule is offered only for a leak that stands out from chance, in the person's own words.
+  const top = r.leaks.find(g => g.adjusted < 0.05)
+  const next =
+    r.n < 20
+      ? `Next: /${TRADES_COMMAND} shows the trips so far on the chart.`
+      : top
+        ? `Next: if "${top.label.toLowerCase()}" rings true, /${RULES_COMMAND} add puts it in your own words as a rule, and /${LOOK_COMMAND} checks every idea against it.`
+        : `Next: /${LOOK_COMMAND} long SOL here checks an idea against your own rules and the market now; the review sharpens as trips add up.`
+  return [reviewText(r, wallet, FILLS_DAYS, fillsSince()), next, DATA_LINE].join('\n')
 }
 
 async function tradesRun($: EngineInterface, wallet: string): Promise<string> {
-  const now = await $.clock.now()
-  if (tv.wallet !== wallet || now - tv.fillsAt > 60_000) {
-    const fills = await readFills($, wallet)
-    if (!fills) return `Could not read the trades from Hyperliquid just now; try again in a minute.\n${DATA_LINE}`
-    tv.wallet = wallet
-    tv.fills = fills
-    tv.fillsAt = now
-  }
-  const trips = roundTrips(tv.fills)
-  if (trips.length === 0) return `No perp trades for ${shortWallet(wallet)} in the last ${FILLS_DAYS} days. A vault or sub-account has its own address.\n${DATA_LINE}`
+  const trips = await tripsOf($, wallet)
+  if (!trips) return `Could not read the trades from Hyperliquid just now; try again in a minute.\n${DATA_LINE}`
+  if (trips.length === 0) return `No perp trades for ${shortWallet(wallet)} in the last ${FILLS_DAYS} days. A vault or sub-account has its own address.\nNext: /${TRADES_COMMAND} 0x… with the address that trades.\n${DATA_LINE}`
   // Pins on the chart's coin when it was traded, else on the coin traded most.
   const view = await read($, chart)
   const counts = new Map<string, number>()
@@ -1658,7 +2258,9 @@ async function tradesRun($: EngineInterface, wallet: string): Promise<string> {
     ? await pinLayer($, coin, interval, TRADE_LAYER, { pins: pins.map(p => ({ time: p.t, dir: p.dir, ...(p.price ? { price: p.price } : {}), label: p.label })), color: TRADE_INK })
     : 0
   const m = await read($, market)
-  const habits = alertHabits(tv.kept, trips, a => alertCoin(a, m))
+  // Bar replay: the alerts up to the replay point only, like the trips.
+  const end = await historyEnd($)
+  const habits = alertHabits(tv.kept.filter(a => a.at < end), trips, a => alertCoin(a, m))
   // The 20-candle move after each alert, from the history read once per coin and interval.
   const candlesOf = new Map<string, Candle[] | null>()
   for (const h of habits.slice(-200)) {
@@ -1671,23 +2273,204 @@ async function tradesRun($: EngineInterface, wallet: string): Promise<string> {
     return cs ? moveAfter(a, cs) : null
   }
   return [
-    tripsText(trips, wallet, FILLS_DAYS),
+    tripsText(trips, wallet, FILLS_DAYS, fillsSince()),
     'Latest:',
     tripList(trips),
     `Pinned on ${coin} ${interval} in purple: ${onChart} on the candles shown (▲ long opened, ▼ short opened, • closed).`,
     tv.kept.length > 0 ? habitsText(habits, moveOf) : `With TradingView alerts on (/${TV_COMMAND} on), this also shows which alerts you took, how late, and what the skipped ones did.`,
-    'Next: ask "what do my trades say about my habits?"',
+    `Next: /${TRADES_COMMAND} review finds the leaks (time of day, after a loss, size, ...), or ask "what do my trades say about my habits?"`,
     DATA_LINE,
   ].join('\n')
 }
 
-async function tradesTool($: EngineInterface, input: { wallet?: unknown }): Promise<string> {
+async function tradesTool($: EngineInterface, input: { wallet?: unknown; review?: unknown }): Promise<string> {
   const given = typeof input.wallet === 'string' ? walletOf(input.wallet) : null
   if (typeof input.wallet === 'string' && input.wallet.trim() !== '' && !given) return 'That is not a wallet address (0x and 40 letters or digits).'
   const wallet = given ?? tv.wallet
   if (!wallet) return `No wallet set. /${TRADES_COMMAND} 0x… sets the public address to read (kept on this PC, never sent to DaviddTech).`
-  if (given && given !== tv.wallet) await $.store.set('tvWallet', given).catch(() => undefined)
-  return tradesRun($, wallet)
+  const text = input.review === true ? await reviewRun($, wallet) : await tradesRun($, wallet)
+  if (!given || given === tv.wallet) return text
+  return `${text}\n(${shortWallet(given)} was read once and not kept; ${tv.wallet ? `their own address stays ${shortWallet(tv.wallet)}` : `their own is set with /${TRADES_COMMAND} 0x…`}.)`
+}
+
+/**
+ * The rules file: in the desk's data folder on this PC (the AI can open and edit it); the desk's store without one.
+ * isMissing only when it is truly not there: a locked, refused or unreadable file is the member's own and stays.
+ */
+async function rulesRead($: EngineInterface): Promise<{ path: string | null; text: string | null; isMissing: boolean }> {
+  const env = await $.process.hookEnv().catch(() => ({}) as Record<string, string | undefined>)
+  const dir = env.CLAUDE_PLUGIN_DATA ? env.CLAUDE_PLUGIN_DATA.replace(/[\\/]+$/, '') : null
+  if (dir) {
+    const path = `${dir}/${RULES_FILE}`
+    const text = await $.fs.read(path).then(x => (typeof x === 'string' ? x : null)).catch(() => null)
+    const isMissing = text === null && (await $.fs.stat(path).then(() => false, (no: unknown) => / failed: ENOENT$/.test(String((no as Error)?.message ?? no))))
+    return { path, text, isMissing }
+  }
+  const kept = await $.store.get('myRules').then(x => ({ x }), () => null)
+  return { path: null, text: typeof kept?.x === 'string' ? kept.x : null, isMissing: kept !== null && typeof kept.x !== 'string' }
+}
+
+async function rulesWrite($: EngineInterface, path: string | null, text: string): Promise<boolean> {
+  if (path) return $.fs.write(path, text).then(() => true).catch(() => false)
+  return $.store.set('myRules', text).then(() => true).catch(() => false)
+}
+
+/** The note when a long rules file is read only in part. */
+function rulesLeftNote(text: string): string {
+  const left = allRulesOf(text).length - rulesOf(text).length
+  return left > 0 ? `(${left} more rule line${left === 1 ? '' : 's'} left out for length: the second look reads the first ${rulesOf(text).length}. Shorten or merge some to bring ${left === 1 ? 'it' : 'them'} in.)` : ''
+}
+
+async function rulesRun($: EngineInterface, args: string): Promise<string> {
+  const { path, text, isMissing } = await rulesRead($)
+  const where = path ? `kept in ${path} (open it, or ask Claude to edit it with you)` : 'kept by the desk on this PC'
+  if (text === null && !isMissing)
+    return path
+      ? `Could not read your rules file just now (${path}); nothing was changed.\nNext: try /${RULES_COMMAND} again in a moment, or close the program that has the file open.`
+      : `Could not read your rules just now; nothing was changed.\nNext: try /${RULES_COMMAND} again in a moment.`
+  const add = /^add\s+(.+)$/is.exec(args.trim())
+  if (add) {
+    // One rule a line: several lines add several rules; list marks and bold are taken off.
+    const lines = (add[1] as string).split(/\r?\n/).map(ruleLine).filter((x): x is string => x !== null)
+    if (lines.length === 0) return `Nothing to add. /${RULES_COMMAND} add <rule>, e.g. /${RULES_COMMAND} add no new trade within an hour of a loss.`
+    // A first rule starts the file with the head only: the examples are never made theirs without being shown.
+    const next = `${(text ?? RULES_HEAD).replace(/\s*$/, '\n')}${lines.map(x => `- ${x}\n`).join('')}`
+    if (!(await rulesWrite($, path, next))) return `Could not write the rules just now; nothing was changed.\nNext: try /${RULES_COMMAND} add again in a moment.`
+    const n = allRulesOf(next).length
+    const left = rulesLeftNote(next)
+    return [
+      `${lines.length === 1 ? 'Rule added' : `${lines.length} rules added`}: ${lines.join('; ')}. ${n} rule${n === 1 ? '' : 's'} now, ${where}.`,
+      left,
+      `Next: /${LOOK_COMMAND} long SOL here checks an idea against them.`,
+    ]
+      .filter(x => x !== '')
+      .join('\n')
+  }
+  if (text === null) {
+    const ok = await rulesWrite($, path, RULES_TEMPLATE)
+    return [
+      `Your trading rules: one rule a line, ${where}. ${ok ? 'Started with 4 examples to change or delete:' : 'Could not write the file just now; the examples:'}`,
+      ...rulesOf(RULES_TEMPLATE).map((r, k) => `${k + 1}. ${r}`),
+      `Next: /${RULES_COMMAND} add <rule> adds one, or ask Claude "help me write my trading rules"; /${LOOK_COMMAND} then checks every idea against them.`,
+    ].join('\n')
+  }
+  const rules = rulesOf(text)
+  const examples = rules.filter(r => RULES_EXAMPLES.includes(r)).length
+  return [
+    rules.length ? `Your ${rules.length} trading rule${rules.length === 1 ? '' : 's'}, ${where}:` : `No rules written yet, ${where}.`,
+    ...rules.map((r, k) => `${k + 1}. ${r}`),
+    rulesLeftNote(text),
+    examples > 0 ? `(${examples === rules.length ? 'All are' : `${examples} ${examples === 1 ? 'is' : 'are'}`} still the starting example${examples === 1 ? '' : 's'}; keep, change or delete ${examples === 1 ? 'it' : 'them'} in the file.)` : '',
+    rules.length
+      ? `Next: /${LOOK_COMMAND} long SOL here gives the 3 strongest reasons against an idea, from these and the market now.`
+      : `Next: /${RULES_COMMAND} add <rule> adds one, or ask Claude "help me write my trading rules".`,
+  ]
+    .filter(x => x !== '')
+    .join('\n')
+}
+
+const lastOf = (xs: readonly (number | null)[]) => {
+  for (let i = xs.length - 1; i >= 0; i--) if (xs[i] !== null && xs[i] !== undefined) return xs[i] as number
+  return null
+}
+
+/** How long ago, in words: minutes under an hour, hours under 2 days, else days. */
+function agoWords(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000))
+  const [n, unit] = m < 60 ? [m, 'minute'] : m < 48 * 60 ? [Math.round(m / 60), 'hour'] : [Math.round(m / 1440), 'day']
+  return `${n} ${unit}${n === 1 ? '' : 's'} ago`
+}
+
+/**
+ * The coin an idea names: the word right after long/short ("short sol here"), one with a $ ("$hype") or one in
+ * capitals ("SOL"); never an everyday word in a sentence ("too much hype", "not sure"). And a word in the long/short
+ * slot that is no coin at all, to say so.
+ */
+function coinInIdea(names: Market | null, idea: string): { said: string | null; unknown: string | null } {
+  const find = (w: string) => resolveCoin(names, w) ?? resolveCoin(names, `k${w}`)
+  const slot = /\b(?:long|short)\s+(?:on\s+)?([A-Za-z][A-Za-z0-9]{0,9})\b/i.exec(idea)?.[1]
+  const inSlot = slot && !/^(here|it|now|the|this|that|again|at|on|in|from|a|an|some|more|and|or|if|is|too|then|when|after|before|into|position|trade|term|bias|side|only|here's)$/i.test(slot) ? slot : null
+  const dollar = [...idea.matchAll(/\$([A-Za-z][A-Za-z0-9]{0,9})\b/g)].map(x => x[1] as string)
+  const caps = (idea.match(/\b[A-Z][A-Z0-9]{1,9}\b/g) ?? []).filter(w => !/^(UTC|ATH|ATL|RSI|EMA|SMA|MA|TP|SL|PNL|ETF|USD|USDT|FOMO|IMO|FUD|CPI|FED|OK|AM|PM|IF|NO)$/.test(w))
+  const said = [inSlot, ...dollar, ...caps].map(w => (w ? find(w) : null)).find(c => c !== null) ?? null
+  return { said, unknown: !said && inSlot && inSlot === inSlot.toUpperCase() ? inSlot : null }
+}
+
+/** The second look's brief: the idea, the rules, the market now, the leaks that apply now. */
+async function secondLook($: EngineInterface, input: { idea?: unknown; coin?: unknown; side?: unknown }): Promise<string> {
+  const idea = typeof input.idea === 'string' ? input.idea.trim() : ''
+  if (idea === '') return `Second look: say the idea, e.g. /${LOOK_COMMAND} long SOL here, it bounced off 180.`
+  // It reads the market now (live price, funding, the last trip), which would give a bar replay away.
+  if ((await read($, replay)) > 0) return `Second look reads the market now, so it waits while bar replay is on.\nNext: Live (x) or /${CHART_COMMAND} replay off, then ask again.`
+  // Hyperliquid busy or down: coin names from its last read, prices only from a fresh one.
+  const m = await marketNow($).catch(() => null)
+  const names = m ?? (await read($, market))
+  const typed = typeof input.coin === 'string' && input.coin.trim() !== '' ? input.coin.trim() : null
+  if (!names && !typed) return `Second look: Hyperliquid could not be read just now, so the coin in the idea can't be checked.\nNext: try again in a minute, or name the coin.\n${DATA_LINE}`
+  const view = await read($, chart)
+  const { said, unknown } = typed ? { said: null, unknown: null } : coinInIdea(names, idea)
+  const named = typed ?? said ?? view?.coin ?? 'BTC'
+  const coin = resolveCoin(names, named) ?? named.toUpperCase()
+  const sides = new Set([...idea.matchAll(/\b(long|short)\b(?![- ]?term)/gi)].map(x => (x[1] as string).toLowerCase()))
+  const side = input.side === 'long' || input.side === 'short' ? input.side : sides.size === 1 ? ([...sides][0] as 'long' | 'short') : null
+  const facts: string[] = []
+  if (unknown) facts.push(`No Hyperliquid perp named ${unknown}, so this brief is on ${coin}; ask which coin they meant if that is not it.`)
+  const ctx = m?.coins[coin]
+  if (ctx) facts.push(`${coin} ${fmtPrice(ctx.price)}, ${fmtPct(changePct(ctx))} in 24h, ${fundingText(ctx.funding)}${side && ctx.funding !== null && ctx.funding !== 0 ? ` (${(side === 'long') === ctx.funding > 0 ? 'paid by' : 'paid to'} a ${side})` : ''}.`)
+  else facts.push(m ? `${coin}: no Hyperliquid perp by that name.` : `${coin}: Hyperliquid's prices could not be read just now; the rest is from what could be read.`)
+  const h1 = await historyCandles($, coin, '1h')
+  const d1 = await historyCandles($, coin, '1d')
+  const r1 = h1 ? lastOf(rsiLine(h1.map(c => c.c), 14)) : null
+  const rd = d1 ? lastOf(rsiLine(d1.map(c => c.c), 14)) : null
+  if (r1 !== null || rd !== null) facts.push(`rsi 14: ${r1 !== null ? `${r1.toFixed(0)} on 1h` : ''}${r1 !== null && rd !== null ? ', ' : ''}${rd !== null ? `${rd.toFixed(0)} on 1d` : ''}.`)
+  const e200 = d1 && d1.length >= 200 ? lastOf(emaLine(d1.map(c => c.c), 200)) : null
+  const last = d1?.at(-1)?.c
+  if (e200 !== null && last !== undefined) facts.push(`1d close ${pct((last - e200) / e200, 1)} from its 200 ema (${last > e200 ? 'above' : 'below'}).`)
+  if (h1 && h1.length > 24) {
+    // The last 24 closed hours, against the price now (the live one when read).
+    const day = h1.slice(-24)
+    const hi = Math.max(...day.map(c => c.h))
+    const lo = Math.min(...day.map(c => c.l))
+    const at = ctx?.price ?? (h1.at(-1) as Candle).c
+    facts.push(`Last 24h range ${fmtPrice(lo)} to ${fmtPrice(hi)}; now ${at > hi ? 'above it' : at < lo ? 'below it' : `${Math.round(((at - lo) / Math.max(1e-12, hi - lo)) * 100)}% of the way up it`}.`)
+  }
+  const now = await $.clock.now()
+  let leaks: ReturnType<typeof leaksNow> = []
+  let looked = 0
+  let hasTrades = false
+  if (tv.wallet) {
+    const trips = await tripsOf($, tv.wallet)
+    if (trips) {
+      const r = reviewOf(trips)
+      hasTrades = r.n >= 20
+      looked = r.looked
+      leaks = hasTrades ? leaksNow(r, trips, coin, side, now) : []
+      const prev = trips.filter(t => t.close !== null).sort((a, b) => (a.close as number) - (b.close as number)).at(-1)
+      if (prev?.close) facts.push(`Their last trip: ${prev.side} ${prev.coin}, closed ${agoWords(now - prev.close)}, net ${prev.net >= 0 ? '+' : '-'}$${Math.abs(prev.net).toFixed(0)}.`)
+      const open = trips.filter(t => t.close === null)
+      if (open.length) facts.push(`Still open: ${open.map(t => `${t.side} ${t.coin}`).join(', ')}.`)
+    } else facts.push(`Their own trades could not be read from Hyperliquid just now, so their last trip and leaks are not in this.`)
+  }
+  const { path, text } = await rulesRead($)
+  const rules = text ? rulesOf(text) : []
+  return [
+    secondLookText({
+      idea,
+      coin,
+      side,
+      rules: rules.map(r => (RULES_EXAMPLES.includes(r) ? `${r} (a starting example they have not changed)` : r)),
+      rulesPath: path,
+      facts,
+      leaks,
+      looked,
+      hasTrades,
+      left: text ? allRulesOf(text).length - rules.length : 0,
+    }),
+    tv.wallet ? '' : `(No wallet set, so their own trades are not in this; /${TRADES_COMMAND} 0x… adds them.)`,
+    DATA_LINE,
+  ]
+    .filter(x => x !== '')
+    .join('\n')
 }
 
 export const register: Register = (on, rawOptions) => {
@@ -1735,11 +2518,22 @@ export const register: Register = (on, rawOptions) => {
     await $.tool.register(HISTORY_TOOL).catch(() => undefined)
     await $.tool.register(TEST_TOOL).catch(() => undefined)
     await $.command
+      .register({ name: SWARM_COMMAND, description: 'The Swarm: many rules at once, judged together; which (if any) beat luck, a walk-forward, the unseen part opened only for those', argumentHint: '[coin] [interval] [deep]: rule; rule; ...' })
+      .catch(() => undefined)
+    await $.tool.register(SWARM_TOOL).catch(() => undefined)
+    await $.command
       .register({ name: TV_COMMAND, description: 'TradingView alerts on the desk: each one said and pinned, and a live scorecard of what came after', argumentHint: 'on | link [link] | score [name] | off | clear' })
       .catch(() => undefined)
     await $.command
-      .register({ name: TRADES_COMMAND, description: 'Your Hyperliquid trades on the chart from a public address: net, habits, alerts taken vs skipped', argumentHint: '[0x address] | off' })
+      .register({ name: TRADES_COMMAND, description: 'Your Hyperliquid trades on the chart from a public address: net, habits, alerts taken vs skipped; review for the leaks', argumentHint: '[0x address] | review | off' })
       .catch(() => undefined)
+    await $.command
+      .register({ name: RULES_COMMAND, description: 'Your own trading rules, one a line, kept on this PC for the second look', argumentHint: '[add <rule>]' })
+      .catch(() => undefined)
+    await $.command
+      .register({ name: LOOK_COMMAND, description: 'A second look before you trade: Claude gives the 3 strongest reasons against, from your rules, the market now and your own leaks', argumentHint: '[idea, e.g. long SOL here]' })
+      .catch(() => undefined)
+    await $.tool.register(LOOK_TOOL).catch(() => undefined)
     await $.tool.register(ALERTS_TOOL).catch(() => undefined)
     await $.tool.register(TRADES_TOOL).catch(() => undefined)
     // TradingView alerts and the wallet come back as the person left them; the feed is read again every minute.
@@ -1871,11 +2665,21 @@ export const register: Register = (on, rawOptions) => {
       desk.alertTimer = null
       // TradingView: stop reading the link and forget it, the alerts kept and the wallet.
       tvStop()
-      Object.assign(tv, { feed: null, kept: [], isGone: false, wallet: null, fills: [], fillsAt: 0 })
-      const keys = await $.store.keys().catch((): string[] => [])
+      Object.assign(tv, { feed: null, kept: [], isGone: false, wallet: null, fillsOf: null, fills: [], fillsAt: 0, fillsFrom: 0 })
+      // Read the rules before the wipe: with no data folder they live in the saved notes.
+      const rules = await rulesRead($)
+      const keys = (await $.store.keys().catch((): string[] => [])).filter(k => rules.path !== null || k !== 'myRules')
       for (const key of keys) await $.store.delete(key).catch(() => undefined)
       const wiped = keys.length === 1 ? '1 saved item wiped' : `${keys.length} saved items wiped`
-      return { text: `Desk reset: chart closed, watchlist off, ${wiped}. The desk keeps nothing now.` }
+      // Deep history: each file emptied (a mod can't delete files), and forgotten for this session.
+      deepMemory.clear()
+      deepFloor.clear()
+      const dir = await deepFolder($)
+      const files = dir ? await $.fs.list(dir).catch(() => []) : []
+      let emptied = 0
+      for (const f of files) if (f.kind === 'file' && (await $.fs.write(`${dir}/${f.name}`, '').then(() => true).catch(() => false))) emptied++
+      const kept = !rules.text ? '' : rules.path ? ` Your rules file stays, as it is yours: ${rules.path}.` : ` Your rules stay, as they are yours (/${RULES_COMMAND} shows them).`
+      return { text: `Desk reset: chart closed, watchlist off, ${wiped}${emptied ? `, ${emptied} deep history file${emptied === 1 ? '' : 's'} emptied` : ''}. The desk keeps nothing now.${kept}\nNext: /${CHART_COMMAND} BTC 1h opens a fresh chart.` }
     }
     let typedCoin: string | null = null
     let interval: string | null = null
@@ -1968,7 +2772,8 @@ export const register: Register = (on, rawOptions) => {
         `· /${SCAN_COMMAND} oversold (or uptrend, golden cross, rsi < 30): check every watchlist coin for one condition`,
         `· /${AFTER_COMMAND} rsi < 30: what happened after it, over years of candles, against any candle`,
         `· /${LIKE_COMMAND}: moments like now, the closest past shapes and what came after them, drawn ahead`,
-        `· /${TEST_COMMAND} rsi < 30 exit rsi > 50: the honest test, with fees, funding, an unseen part and a luck check; add across BTC ETH SOL for several coins`,
+        `· /${TEST_COMMAND} rsi < 30 exit rsi > 50: the honest test, with fees, funding, an unseen part and a luck check; add across BTC ETH SOL for several coins, deep for years of candles`,
+        `· /${SWARM_COMMAND} SOL 4h deep: rule; rule; ...: many rules at once, judged together; or ask Claude "find me something on SOL 4h"`,
         `· /${MARK_COMMAND} 65000 resistance: draw a level; two prices draw a zone; trend lows, fib: drawing tools`,
         `· /${IND_COMMAND} export pine (or python): take the indicators to TradingView or a notebook`,
         `· /${CHART_COMMAND} save: the chart as a picture (SVG) and its numbers (CSV) in lab-charts/`,
@@ -1976,6 +2781,9 @@ export const register: Register = (on, rawOptions) => {
         `· /${CHART_COMMAND} replay: bar replay, the later candles hidden; Next (n) shows one more, practise reading the chart`,
         `· /${ALERT_COMMAND} BTC above 65000 or /${ALERT_COMMAND} SOL rsi < 30: told once when it happens`,
         `· /${WATCH_COMMAND}: live prices above the prompt`,
+        `· /${TV_COMMAND} on: your TradingView alerts on the desk; /${TV_COMMAND} score shows what came after each`,
+        `· /${TRADES_COMMAND} 0x…: your own Hyperliquid trades on the chart; /${TRADES_COMMAND} review finds where they do worse than your usual`,
+        `· /${RULES_COMMAND}: your own trading rules, one a line; /${LOOK_COMMAND} long SOL here: the 3 strongest reasons against an idea`,
         '· Or just ask: "show SOL 4h with RSI and the 200 EMA", "what happened after a golden cross on BTC 1d?", "test going long at RSI under 30"',
       ].join('\n'),
     }
@@ -2049,10 +2857,11 @@ export const register: Register = (on, rawOptions) => {
   on('command.run', { command: SCAN_COMMAND }, async ($, e) => ({ text: await runScan($, e.args) }))
 
   on('command.run', { command: AFTER_COMMAND }, async ($, e) => {
-    const m = /\s+ahead\s+(\d+)\s*$/i.exec(e.args)
-    const when = m ? e.args.slice(0, m.index) : e.args
+    const { deep, rest } = deepWord(e.args)
+    const m = /\s+ahead\s+(\d+)\s*$/i.exec(rest)
+    const when = m ? rest.slice(0, m.index) : rest
     if (when.trim() === '') return { text: `Try: /${AFTER_COMMAND} rsi < 30 · /${AFTER_COMMAND} golden cross on 1d · /${AFTER_COMMAND} close crosses above ema 200 on 4h ahead 20` }
-    return { text: await runAfter($, { when, ahead: m ? Number(m[1]) : undefined }) }
+    return { text: await runAfter($, { when, ahead: m ? Number(m[1]) : undefined, deep }) }
   })
 
   on('command.run', { command: LIKE_COMMAND }, async ($, e) => {
@@ -2070,9 +2879,10 @@ export const register: Register = (on, rawOptions) => {
   })
 
   on('command.run', { command: TEST_COMMAND }, async ($, e) => {
-    const t = parseTestWords(e.args)
+    const { deep, rest } = deepWord(e.args)
+    const t = parseTestWords(rest)
     if (!t) return { text: `Try: /${TEST_COMMAND} rsi < 30 exit rsi > 50 · /${TEST_COMMAND} ema 20 crosses above ema 50 exit ema 20 crosses below ema 50 on 4h · /${TEST_COMMAND} rsi > 70 hold 12 short · /${TEST_COMMAND} rsi < 30 exit rsi > 50 across BTC ETH SOL` }
-    return { text: await runTestTool($, t) }
+    return { text: await runTestTool($, { ...t, deep }) }
   })
 
   on('command.run', { command: TV_COMMAND }, async ($, e) => {
@@ -2108,11 +2918,17 @@ export const register: Register = (on, rawOptions) => {
     const arg = e.args.trim()
     if (arg.toLowerCase() === 'off') {
       tv.wallet = null
+      tv.fillsOf = null
       tv.fills = []
       tv.fillsAt = 0
+      tv.fillsFrom = 0
       await $.store.set('tvWallet', '').catch(() => undefined)
       await setLayers($, ((await read($, layerList)) ?? []).filter(l => l.name !== TRADE_LAYER))
       return { text: 'Wallet forgotten and its pins taken off the chart.' }
+    }
+    if (arg.toLowerCase() === 'review') {
+      if (!tv.wallet) return { text: `The review reads your trades from a public address (kept on this PC, never sent to DaviddTech).\nNext: /${TRADES_COMMAND} 0x… with your Hyperliquid address, then /${TRADES_COMMAND} review.` }
+      return { text: await reviewRun($, tv.wallet) }
     }
     const wallet = arg === '' ? tv.wallet : walletOf(arg)
     if (!wallet)
@@ -2123,6 +2939,7 @@ export const register: Register = (on, rawOptions) => {
             : 'That is not a wallet address (0x and 40 letters or digits).',
       }
     if (wallet !== tv.wallet) await $.store.set('tvWallet', wallet).catch(() => undefined)
+    tv.wallet = wallet
     return { text: await tradesRun($, wallet) }
   })
 
@@ -2132,18 +2949,78 @@ export const register: Register = (on, rawOptions) => {
   })
 
   on('tool.run', { tool: /^mcp__lab-desk__chart_trades$/ }, async ($, e) => {
-    const input = e as unknown as { wallet?: unknown }
+    const input = e as unknown as { wallet?: unknown; review?: unknown }
     return { result: await tradesTool($, input) }
   })
 
+  on('tool.run', { tool: new RegExp(`^${LOOK_TOOL_NAME}$`) }, async ($, e) => {
+    const input = e as unknown as { idea?: unknown; coin?: unknown; side?: unknown }
+    return { result: await secondLook($, input) }
+  })
+
+  on('command.run', { command: RULES_COMMAND }, async ($, e) => ({ text: await rulesRun($, e.args) }))
+
+  on('command.run', { command: LOOK_COMMAND }, async ($, e) => {
+    const idea = e.args.trim()
+    if (idea === '') return { text: `Second look before you trade: /${LOOK_COMMAND} long SOL here, it bounced off 180. Claude reads your rules (/${RULES_COMMAND}), the market now and your own leaks, and gives the 3 strongest reasons against.` }
+    if ((await read($, replay)) > 0) return { text: `Second look reads the market now, so it waits while bar replay is on.\nNext: Live (x) or /${CHART_COMMAND} replay off, then ask again.` }
+    const ask = `Second look before I trade: ${idea}. Use chart_second_look and give me the 3 strongest reasons against.`
+    const filled = await $.prompt.fill({ text: ask }).catch(() => ({ isFilled: false }))
+    return { text: filled.isFilled ? 'Second look ready in the prompt box: press Enter and Claude gives the 3 strongest reasons against.' : `Ask Claude: ${ask}` }
+  })
+
   on('tool.run', { tool: HISTORY_TOOL_NAME }, async ($, e) => {
-    const input = e as unknown as { mode?: unknown; when?: unknown; coin?: unknown; interval?: unknown; ahead?: unknown; window?: unknown; mark?: unknown }
+    const input = e as unknown as { mode?: unknown; when?: unknown; coin?: unknown; interval?: unknown; ahead?: unknown; window?: unknown; mark?: unknown; deep?: unknown }
     return { result: input.mode === 'like' || (input.mode !== 'after' && typeof input.when !== 'string') ? await runLike($, input) : await runAfter($, input) }
   })
 
   on('tool.run', { tool: TEST_TOOL_NAME }, async ($, e) => {
-    const input = e as unknown as { enter?: unknown; exit?: unknown; hold?: unknown; side?: unknown; fee?: unknown; coin?: unknown; interval?: unknown; mark?: unknown }
+    const input = e as unknown as { enter?: unknown; exit?: unknown; hold?: unknown; side?: unknown; fee?: unknown; coin?: unknown; interval?: unknown; mark?: unknown; deep?: unknown }
     return { result: await runTestTool($, input) }
+  })
+
+  on('tool.run', { tool: new RegExp(`^${SWARM_TOOL_NAME}$`) }, async ($, e) => {
+    const input = e as unknown as { rules?: unknown; coin?: unknown; interval?: unknown; deep?: unknown; fee?: unknown; mark?: unknown }
+    return { result: await runSwarmTool($, input) }
+  })
+
+  on('command.run', { command: SWARM_COMMAND }, async ($, e) => {
+    // "/lab-swarm SOL 4h deep: rule; rule" (before the colon: the coin, interval and deep), "SOL 4h rule; rule" without
+    // the colon, or only rules. A colon inside a rule ("Dip: rsi < 30 hold 6; Fade: ...") is a name, not the head.
+    const colon = e.args.indexOf(':')
+    let at = colon
+    if (colon >= 0) {
+      const before = e.args.slice(0, colon)
+      const parts = e.args.slice(colon + 1).split(/\s*(?:;|\n)\s*/).filter(x => x.trim() !== '')
+      if (/[;\n]/.test(before)) at = -1
+      else if (parts.length > 1 && !(parts[0] ?? '').includes(':') && parts.slice(1).some(x => x.includes(':'))) {
+        const m = await marketNow($).catch(() => null)
+        const words = deepWord(before).rest.split(/\s+/).filter(x => x !== '')
+        if (m !== null && !words.every(w => intervalOf(w) || resolveCoin(m, w))) at = -1
+      }
+    } else {
+      const lead = /^\s*(?:(?:deep|years)\s+)?(?:[A-Za-z][A-Za-z0-9]{0,15}\s+)?(?:1m|5m|15m|1h|4h|1d|1w)(?:\s+(?:deep|years))?(?=\s)/i.exec(e.args)
+      if (lead) at = lead[0].length
+      else {
+        // A leading coin alone ("SOL rsi < 30 hold 6; ..."): only when the first rule doesn't read as it stands.
+        const first = /^\s*([A-Za-z][A-Za-z0-9]{0,15})(?=\s)/.exec(e.args)
+        const t = parseTestWords(splitRules(e.args)[0] ?? '')
+        const reads = t !== null && !('error' in parseTest(t))
+        const m = first && !reads ? await marketNow($).catch(() => null) : null
+        if (first && m && resolveCoin(m, first[1] as string)) at = first[0].length
+      }
+    }
+    const head = at >= 0 ? e.args.slice(0, at) : ''
+    const { deep, rest } = deepWord(head)
+    let coin: string | undefined
+    let interval: string | undefined
+    for (const w of rest.split(/\s+/).filter(x => x !== '')) {
+      if (intervalOf(w)) interval = w
+      else coin = w
+    }
+    const body = at >= 0 ? e.args.slice(at + 1) : e.args
+    const d2 = deepWord(body)
+    return { text: await runSwarmTool($, { rules: d2.rest, coin, interval, deep: deep || d2.deep }) }
   })
 
   on('command.run', { command: ALERT_COMMAND }, async ($, e) => {

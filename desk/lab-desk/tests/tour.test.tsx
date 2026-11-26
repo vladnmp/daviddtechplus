@@ -136,3 +136,10 @@ test('nextSuggestion reads the command or the question from a "Next:" line', () 
   for (const l of lines) expect(nextSuggestion(l) ?? '').not.toMatch(/\b(off|clear|remove|reset|close|stop|forget|none)\b/)
   expect(nextSuggestion('Next: the interval buttons in the pane switch candles.')).toBeNull()
 })
+
+test('the dim next step never offers a placeholder or a formula cut at its brackets', () => {
+  expect(nextSuggestion('Next: /lab-rules add <rule> adds one, or ask Claude "help me write my trading rules".')).toBe(null)
+  expect(nextSuggestion('Next: if "opened after a losing trip" rings true, /lab-rules add puts it in your own words as a rule.')).toBe('/lab-rules add')
+  expect(nextSuggestion('Next: /lab-second-look long SOL here checks an idea against your own rules.')).toBe('/lab-second-look long SOL here')
+  expect(nextSuggestion('Next: /lab-trades review finds the leaks (time of day, after a loss, size, ...)')).toBe('/lab-trades review')
+})

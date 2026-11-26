@@ -50,7 +50,7 @@ export const TOUR_QUIZ =
   "Quiz me on this bar replay: read the Lab desk chart (chart_read), ask me one question about what it shows and what I expect next, and don't say what came next. After I answer, step the replay forward with the chart tool and tell me how it went."
 
 /** Verbs that end the command in a "Next:" line: "/lab-chart SOL 4h opens it". */
-const NEXT_VERB = /^(opens|paints|lists|says|puts|picks|changes|removes|hides|jumps|goes|checks|stops|makes|draws|shows|adds|saves|loads|turns|sets)$/
+const NEXT_VERB = /^(opens|paints|lists|says|puts|picks|changes|removes|hides|jumps|goes|checks|stops|makes|draws|shows|adds|saves|loads|turns|sets|finds|runs|gives)$/
 
 /**
  * The next step a reply names, for the prompt box's dim suggestion (Tab takes it): the first command in its
@@ -63,11 +63,14 @@ export function nextSuggestion(text: string): string | null {
   const ask = /^ask Claude "([^"]+)"/.exec(line)
   if (ask) return ask[1] ?? null
   // The first command that does not undo what was just done ("/lab-watch off hides it" is not a next step).
-  for (const cmd of line.matchAll(/\/lab(?:-[a-z]+)?\b/g)) {
+  for (const cmd of line.matchAll(/\/lab(?:-[a-z]+)*\b/g)) {
     const words = [cmd[0]]
     for (const w of line.slice((cmd.index ?? 0) + cmd[0].length).trim().split(/\s+/)) {
       if (w === '' || NEXT_VERB.test(w) || w === 'or') break
       const clean = w.replace(/[,.;:]+$/, '')
+      // A placeholder ("<rule>") or a formula cut at its brackets is not a command to run as it is.
+      if (/<[a-z]+>/i.test(clean)) return null
+      if (/[()"]/.test(clean) && !/^[("]/.test(clean)) return null
       if (clean === '' || /[()"]/.test(clean)) break
       words.push(clean)
       if (clean !== w) break

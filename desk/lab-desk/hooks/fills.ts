@@ -69,7 +69,11 @@ export function keepFills(kept: readonly Fill[], fresh: readonly Fill[]): Fill[]
  */
 export function roundTrips(fills: readonly Fill[]): Trip[] {
   const byCoin = new Map<string, Fill[]>()
-  for (const f of fills) byCoin.set(f.coin, [...(byCoin.get(f.coin) ?? []), f])
+  for (const f of fills) {
+    const list = byCoin.get(f.coin)
+    if (list) list.push(f)
+    else byCoin.set(f.coin, [f])
+  }
   const trips: Trip[] = []
   const flat = (x: number) => Math.abs(x) < 1e-12
   const open = (coin: string, f: Fill, size: number, side: 'long' | 'short', feeShare: number): Trip => ({ coin, side, open: f.time, close: null, entry: f.px, exit: null, size, net: -f.fee * feeShare, fees: f.fee * feeShare, fills: 1 })
@@ -134,10 +138,10 @@ function median(xs: readonly number[]): number {
 }
 
 /** The trips in plain words: count, net, the share that made money (with its range), how long they ran, per coin. */
-export function tripsText(trips: readonly Trip[], wallet: string, days: number): string {
+export function tripsText(trips: readonly Trip[], wallet: string, days: number, since?: string): string {
   const done = trips.filter(t => t.close !== null)
   const open = trips.length - done.length
-  const head = `Trades of ${shortWallet(wallet)} over the last ${days} days: ${done.length} finished round trip${done.length === 1 ? '' : 's'}${open ? `, ${open} still open` : ''} (net = closed PnL after fees; funding not counted).`
+  const head = `Trades of ${shortWallet(wallet)} ${since ? `since ${since}` : `over the last ${days} days`}: ${done.length} finished round trip${done.length === 1 ? '' : 's'}${open ? `, ${open} still open` : ''} (net = closed PnL after fees; funding not counted).`
   if (done.length < MIN_CASES) return `${head}\nUnder ${MIN_CASES} finished trips: no numbers yet.`
   const net = done.reduce((a, t) => a + t.net, 0)
   const fees = done.reduce((a, t) => a + t.fees, 0)
@@ -145,7 +149,11 @@ export function tripsText(trips: readonly Trip[], wallet: string, days: number):
   const [lo, hi] = wilson(won, done.length)
   const lines = [head, `Net ${usd(net)} (fees ${usd(-fees)}). Made money ${share(won / done.length)} of the time [${share(lo)}–${share(hi)}]. Median time in a trade ${hours(median(done.map(t => (t.close as number) - t.open)))}.`]
   const coins = new Map<string, Trip[]>()
-  for (const t of done) coins.set(t.coin, [...(coins.get(t.coin) ?? []), t])
+  for (const t of done) {
+    const list = coins.get(t.coin)
+    if (list) list.push(t)
+    else coins.set(t.coin, [t])
+  }
   const rows = [...coins.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 6)
   for (const [coin, list] of rows) {
     const w = list.filter(t => t.net > 0).length

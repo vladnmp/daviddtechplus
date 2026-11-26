@@ -131,6 +131,8 @@ export type WorldOptions = {
   funding?: (coin: string, startTime: number) => Record<string, unknown>[] | null
   /** What a GET of the TradingView feed answers (url with its cursor), or undefined for 404. */
   feed?: (url: string) => { status: number; body: unknown } | undefined
+  /** What a plain GET of another site answers (Binance, Bybit, Deribit, FRED), or undefined for 404. */
+  get?: (url: string) => { status: number; text: string } | undefined
   /** The fills userFillsByTime answers for a wallet and window; [] when absent. */
   fills?: (user: string, startTime: number, endTime: number) => Record<string, unknown>[]
   /** What one MCP tool answers, ahead of `mcp`; null passes on to `mcp`. */
@@ -176,6 +178,10 @@ export function engine(on: On, opts: WorldOptions = {}): World {
     if (e.url.includes('/tv/')) {
       const got = opts.feed?.(e.url)
       return { value: got ? { status: got.status, ok: got.status < 300, headers, text: JSON.stringify(got.body) } : { status: 404, ok: false, headers, text: 'Not found' } }
+    }
+    if ((e.init?.method ?? 'GET') === 'GET' && !e.url.includes('hyperliquid')) {
+      const got = opts.get?.(e.url)
+      return { value: got ? { status: got.status, ok: got.status < 300, headers, text: got.text } : { status: 404, ok: false, headers, text: 'Not found' } }
     }
     const req = JSON.parse(body) as { type: string; req?: { coin?: string }; coin?: string; startTime?: number; endTime?: number; user?: string }
     if (req.type === 'userFillsByTime') return { value: { status: 200, ok: true, headers, text: JSON.stringify(opts.fills?.(req.user ?? '', req.startTime ?? 0, req.endTime ?? 0) ?? []) } }

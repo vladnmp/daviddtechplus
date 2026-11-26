@@ -8,14 +8,15 @@ import { MIN_CASES, conditionSeries, conditionWarmup, parseCondition, pct, day }
 import { evalFormula, parseFormula } from './formula'
 import type { Node } from './formula'
 import type { Condition } from './history'
+import { LOW_POWER, MIN_SCORED, SPA_DRAWS, barReturns, blockLength, spaTest } from './spa'
 
 /** Hyperliquid's base taker fee per side (0.045%); the person can give their own. */
 export const FEE_DEFAULT = 0.00045
 export const SEEN_SHARE = 0.7
 export const HOLD_DEFAULT = 10
 /** Fewer unseen trades than this and the luck line says so instead of a number. */
-export const MIN_UNSEEN = 10
-export const MAX_TRIES_KEPT = 200
+export const MIN_UNSEEN = MIN_SCORED
+export const MAX_TRIES_KEPT = 300
 
 export type Funding = { t: number; rate: number }
 
@@ -104,11 +105,11 @@ export function withFunding(candles: readonly Candle[], funding: readonly Fundin
 }
 
 /** For a condition that reads funding: from when it was read, and a word if Hyperliquid stopped answering early. */
-export function fundingNote(candles: readonly Candle[], isComplete: boolean): string {
+export function fundingNote(candles: readonly Candle[], isComplete: boolean, venue = 'Hyperliquid'): string {
   const first = candles.find(c => c.f !== null && c.f !== undefined)
   if (!first) return 'No funding could be read for these candles, so a condition on funding never holds. Ask again in a minute.'
   const from = first === candles[0] ? '' : `Funding (%/yr) is read from ${day(first.t)} UTC; candles before it don't count. `
-  const short = isComplete ? '' : 'Hyperliquid stopped answering before all funding was read, so the latest candles without it don\'t count. '
+  const short = isComplete ? '' : `${venue} stopped answering before all funding was read, so the latest candles without it don't count. `
   return (from + short).trim()
 }
 
@@ -298,10 +299,11 @@ export function nearby(raw: { enter: string; exit?: string; hold: number | null;
   let tried = 0
   let worst = Infinity
   let best = -Infinity
+  const seen = candles.slice(0, cut)
   for (const v of variants.slice(0, 40)) {
     const spec = parseTest({ enter: v.enter, exit: v.exit, hold: v.hold ?? undefined, side: raw.side, fee: raw.fee * 100 })
     if ('error' in spec) continue
-    const r = partResult(runTest(spec, candles.slice(0, cut), funding), candles, 0, cut, raw.side)
+    const r = partResult(runTest(spec, seen, funding), candles, 0, cut, raw.side)
     if (r.n === 0) continue
     tried++
     if (r.total > 0) positive++
@@ -317,24 +319,34 @@ export type TestResult = {
   unseen: PartResult
   cut: number
   near: Nearby
-  /** The luck check on the unseen part (null when it had too few trades to ask). */
-  shuffle: Shuffle | null
+  /** The luck check on the unseen part across every try there (null when it had too few trades, or lost). */
+  luck: Luck | null
   tries: number
   fundingFrom: number | null
   from: number
   to: number
   /** The first unseen candle's time. */
   cutT: number
-  /** Hyperliquid stopped answering before the funding was all read: the latest hours count none. */
+  /** Earlier tries that count but could not be run again in the luck check. */
+  older?: number
+  /** The venue stopped answering before the funding was all read: the latest hours count none. */
   isFundingShort?: boolean
+  /** An extra series the rule reads (open interest, DVOL, VIX) could not be read just now. */
+  isExtraMissing?: boolean
+  /** Where the candles and funding came from: Hyperliquid, or Binance for deep history. */
+  venue: string
   /** Every trade, seen and unseen, by the market's mood when it opened. */
   moods: MoodRow[]
 }
 
-/** Where the unseen part starts: after the warm-up, the last 30% of the candles. */
-export function cutIndex(spec: TestSpec, length: number): number {
-  const warm = Math.max(conditionWarmup(spec.enter), spec.exit ? conditionWarmup(spec.exit) : 0)
-  return Math.min(length - 1, Math.max(warm + 1, Math.floor(warm + (length - warm) * SEEN_SHARE)))
+/** Where the unseen part starts on these candles: the last 30%, the same for every rule, test and swarm. */
+export function sealIndex(length: number): number {
+  return Math.min(length - 1, Math.max(1, Math.floor(length * SEEN_SHARE)))
+}
+
+/** Where the unseen part starts for a test: the shared seal, never moved by the rule's warm-up. */
+export function cutIndex(_spec: TestSpec, length: number): number {
+  return sealIndex(length)
 }
 
 /** The whole honest test: seen and unseen parts, the nearby check on the seen part, the try count given. */
@@ -393,19 +405,61 @@ export function moodLine(moods: readonly MoodRow[], all: number): string | null 
   return parts.join(' ')
 }
 
-export function honestTest(spec: TestSpec, raw: { enter: string; exit?: string }, candles: readonly Candle[], funding: readonly Funding[], tries: number, runs = SHUFFLES): TestResult {
+/** The luck check's answer for one rule, judged together with every other try on the same unseen candles. */
+export type Luck = {
+  /** This rule's chance of looking this good by luck, out of all the tries (adjusted for them). */
+  p: number
+  /** It beats luck stepwise at SPA_ALPHA. */
+  survives: boolean
+  /** Tries in the check (this one included) that traded on these candles. */
+  family: number
+  draws: number
+  block: number
+  /** Under LOW_POWER trades: a real effect can still be missed. */
+  isLowPower: boolean
+}
+
+export type HonestOptions = {
+  /** Bootstrap draws (SPA_DRAWS unless given). */
+  draws?: number
+  /** Every other try on this coin and interval that has looked at the unseen part, run again here on the same candles. */
+  others?: readonly TestSpec[]
+  venue?: string
+}
+
+/**
+ * The luck check on candles [cut, end) for `spec` and the `others`: each as per-candle returns with the market's
+ * own drift taken off, then Hansen's SPA across them all. Index 0 is `spec`.
+ */
+export function luckAcross(spec: TestSpec, others: readonly TestSpec[], candles: readonly Candle[], funding: readonly Funding[], cut: number, draws: number, first?: readonly Trade[]): Luck {
+  const all = [spec, ...others]
+  const holds: number[] = []
+  const rows = all.map((s, k) => {
+    const trades = k === 0 && first ? first : runTest(s, candles, funding, cut)
+    if (k === 0) for (const t of trades) holds.push(t.j - t.i)
+    return barReturns(trades, candles, cut, candles.length, s.side, s.fee, true)
+  })
+  const step = candles.length > 1 ? (candles[1] as Candle).t - (candles[0] as Candle).t : 3_600_000
+  const block = blockLength(step, holds, candles.length - cut)
+  const r = spaTest(rows, { draws, block, seed: seedOf(`${specKey(spec)}|${candles.length}|${candles.at(-1)?.t ?? 0}`) })
+  return { p: r.adjusted[0] ?? 1, survives: r.survivors.includes(0), family: Math.max(1, r.used), draws: r.draws, block: r.block, isLowPower: holds.length < LOW_POWER }
+}
+
+export function honestTest(spec: TestSpec, raw: { enter: string; exit?: string }, candles: readonly Candle[], funding: readonly Funding[], tries: number, opts: number | HonestOptions = {}): TestResult {
+  const o: HonestOptions = typeof opts === 'number' ? { draws: opts } : opts
   const warm = Math.max(conditionWarmup(spec.enter), spec.exit ? conditionWarmup(spec.exit) : 0)
   const cut = cutIndex(spec, candles.length)
   // The seen part never looks past the cut: its trades run on candles before it only.
   const seenTrades = runTest(spec, candles.slice(0, cut), funding, warm)
   const unseenTrades = runTest(spec, candles, funding, cut)
   const unseen = partResult(unseenTrades, candles, cut, candles.length, spec.side)
-  const shuffle = unseen.n >= MIN_UNSEEN && unseen.avg > 0 ? shuffleCheck(spec, candles, funding, cut, unseen.avg, runs, seedOf(`${specKey(spec)}|${candles.length}|${candles.at(-1)?.t ?? 0}`)) : null
+  const others = (o.others ?? []).filter(x => specKey(x) !== specKey(spec))
+  const luck = unseen.n >= MIN_SCORED && unseen.avg > 0 ? luckAcross(spec, others, candles, funding, cut, o.draws ?? SPA_DRAWS, unseenTrades) : null
   return {
     spec,
     seen: partResult(seenTrades, candles, warm, cut, spec.side),
     unseen,
-    shuffle,
+    luck,
     cut,
     near: nearby({ enter: raw.enter, ...(raw.exit ? { exit: raw.exit } : {}), hold: spec.hold, side: spec.side, fee: spec.fee }, candles, funding, cut),
     tries,
@@ -414,13 +468,22 @@ export function honestTest(spec: TestSpec, raw: { enter: string; exit?: string }
     to: candles.at(-1)?.t ?? 0,
     cutT: (candles[cut] as Candle | undefined)?.t ?? 0,
     moods: moodSplit([...seenTrades, ...unseenTrades], candles),
+    venue: o.venue ?? 'Hyperliquid',
   }
 }
+
+/** A test as words the desk reads back (the try ledger keeps these to run every try again): the fee always given. */
+export function specWords(s: TestSpec): string {
+  return `${s.enter.said}${s.exit ? ` exit ${s.exit.said}` : ''}${s.hold !== null ? ` hold ${s.hold}` : ''}${s.side === 'short' ? ' short' : ''} fee ${Number((s.fee * 100).toFixed(4))}`
+}
+
+export const chanceText = (c: number) => (c < 0.001 ? 'under 0.1%' : c < 0.01 ? `about ${(c * 100).toFixed(1)}%` : `about ${Math.round(c * 100)}%`)
 
 
 function partLine(name: string, r: PartResult, side: 'long' | 'short'): string {
   if (r.n === 0) return `${name}: no trades.`
   const open = r.trades.some(t => t.open) ? ' (the last still open, valued at the latest close)' : ''
+  if (r.n < MIN_CASES) return `${name}: ${r.n} trade${r.n === 1 ? '' : 's'}${open}: under ${MIN_CASES}, no numbers (${side === 'long' ? 'just holding' : 'just staying short'}: ${pct(r.hold, 1)}).`
   return `${name}: ${r.n} trade${r.n === 1 ? '' : 's'}${open}, ${share(r.winShare)} won, average ${pct(r.avg)} a trade, all together ${pct(r.total, 1)}, deepest drop ${pct(r.maxDrawdown, 1)} (${side === 'long' ? 'just holding' : 'just staying short'}: ${pct(r.hold, 1)}).`
 }
 
@@ -428,23 +491,22 @@ function partLine(name: string, r: PartResult, side: 'long' | 'short'): string {
 export function luckLine(r: TestResult, where: string): string {
   const u = r.unseen
   const tries = `${r.tries} ${r.tries === 1 ? 'try' : 'tries'} on ${where} so far`
-  if (u.n < MIN_UNSEEN) return `Luck check: only ${u.n} unseen trade${u.n === 1 ? '' : 's'}, too few to tell skill from luck (${tries}). A looser entry gives more.`
+  if (u.n < MIN_SCORED) return `Luck check: ${u.n} unseen trade${u.n === 1 ? '' : 's'}, too few to judge (${MIN_SCORED} needed; ${tries}).${r.isExtraMissing ? '' : r.venue === 'Binance' ? ' A looser entry or a shorter interval gives more.' : ' A looser entry, a shorter interval or "deep" for years of candles gives more.'}`
   if (u.total <= 0 || u.avg <= 0) return `Luck check: on the unseen part it lost (${pct(u.total, 1)}), so whatever the seen part showed did not carry over (${tries}).`
-  const sh = r.shuffle
-  if (!sh) return `Luck check: not run (${tries}).`
-  const c = luckChance(sh.p, r.tries)
-  const chance = c < 0.01 ? 'under 1%' : `about ${Math.round(c * 100)}%`
-  const shuffled = `On the same unseen candles shuffled into random order, the rule did at least this well ${sh.beat} of ${sh.runs} times`
-  return c < 0.05
-    ? `Luck check: ${shuffled}. With ${tries}, the chance luck alone gives this is ${chance}. Unlikely to be luck alone; still only history, so the next step is a new coin or a later month.`
-    : `Luck check: ${shuffled}. With ${tries}, the chance luck alone gives this is ${chance}, so it could well be luck.`
+  const l = r.luck
+  if (!l) return `Luck check: not run (${tries}).`
+  const family = l.family > 1 ? `judged with all ${l.family} tries on ${where} that saw the unseen part` : r.older ? 'judged on its own (earlier tries could not be run again)' : `judged on its own, the first try on ${where} to see the unseen part`
+  const how = `Luck check (${family}, the market's own drift taken off, ${l.draws} reshuffles in blocks of ${l.block} candles)`
+  return l.survives
+    ? `${how}: luck alone gives this ${chanceText(l.p)} of the time, so it beats luck${l.isLowPower ? ` (under ${LOW_POWER} trades, so a weak check)` : ''}. Still only history, so the next step is a new coin or a later stretch.`
+    : `${how}: luck alone gives this ${chanceText(l.p)} of the time, so it does not stand out from luck.${l.isLowPower ? ` With under ${LOW_POWER} trades a real effect can still be missed.` : ''}`
 }
 
 export function testText(r: TestResult, coin: string, interval: string, onChart: number): string {
   const s = r.spec
   const exitText = [s.exit ? `exit when ${s.exit.said}` : '', s.hold !== null ? `${s.exit ? 'or ' : 'exit '}after ${s.hold} candle${s.hold === 1 ? '' : 's'}` : ''].filter(x => x).join(' ')
   const lines = [
-    `Test: ${coin} ${interval}, ${s.side}, enter when ${s.enter.said}, ${exitText}. Fee ${(s.fee * 100).toFixed(3)}% a side${r.fundingFrom === null ? (r.isFundingShort ? ', funding not read (Hyperliquid was busy; ask again in a minute)' : ', funding not counted (no history)') : `, funding from ${day(r.fundingFrom).slice(0, 10)} on${r.isFundingShort ? ' (Hyperliquid was busy, so the latest hours count none; ask again in a minute for all of it)' : ''}`}. ${day(r.from)} to ${day(r.to)} UTC; unseen part from ${day(r.cutT)} on.`,
+    `Test: ${coin} ${interval} on ${r.venue}, ${s.side}, enter when ${s.enter.said}, ${exitText}. Fee ${(s.fee * 100).toFixed(3)}% a side${r.fundingFrom === null ? (r.isFundingShort ? `, funding not read (${r.venue} was busy; ask again in a minute)` : ', funding not counted (no history)') : `, funding from ${day(r.fundingFrom).slice(0, 10)} on${r.isFundingShort ? ` (${r.venue} was busy, so the latest hours count none; ask again in a minute for all of it)` : ''}`}. ${day(r.from)} to ${day(r.to)} UTC; unseen part from ${day(r.cutT)} on.`,
     partLine('Unseen (last 30%, the part that counts)', r.unseen, s.side),
     partLine('Seen (first 70%)', r.seen, s.side),
   ]
@@ -504,12 +566,13 @@ export function acrossText(rows: readonly CoinRow[], interval: string): string {
     }
     if (u.total > 0) made++
     const head = `· ${row.coin}: ${u.n} trade${u.n === 1 ? '' : 's'}, ${share(u.winShare)} won, average ${pct(u.avg)} a trade, all together ${pct(u.total, 1)}`
-    if (u.n < MIN_UNSEEN) lines.push(`${head}; too few trades for the luck check (${tries}).`)
-    else if (u.total <= 0 || u.avg <= 0 || !row.r.shuffle) lines.push(`${head}; lost, so no luck check (${tries}).`)
+    const l = row.r.luck
+    if (u.n < MIN_CASES) lines.push(`· ${row.coin}: ${u.n} trade${u.n === 1 ? '' : 's'}: under ${MIN_CASES}, no numbers (${tries}).`)
+    else if (u.n < MIN_UNSEEN) lines.push(`${head}; too few trades to judge (${MIN_UNSEEN} needed, ${tries}).`)
+    else if (u.total <= 0 || u.avg <= 0 || !l) lines.push(`${head}; lost, so no luck check (${tries}).`)
     else {
-      const c = luckChance(row.r.shuffle.p, row.r.tries)
-      if (c < LUCK_BAR) passed++
-      lines.push(`${head}; luck alone gives this ${c < 0.01 ? 'under 1%' : `about ${Math.round(c * 100)}%`} of the time (${row.r.shuffle.beat} of ${row.r.shuffle.runs} shuffles beat it, ${tries}).`)
+      if (l.survives) passed++
+      lines.push(`${head}; luck alone gives this ${chanceText(l.p)} of the time, judged with ${l.family} ${l.family === 1 ? 'try' : 'tries'} there${l.survives ? ': beats luck' : ''} (${tries}).`)
     }
   }
   const m = ok.length

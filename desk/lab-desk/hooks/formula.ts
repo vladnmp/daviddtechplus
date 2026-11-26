@@ -16,6 +16,8 @@ export type Node =
 
 /** The price series a formula may read. */
 export const SERIES = ['open', 'high', 'low', 'close', 'volume', 'hl2', 'hlc3', 'ohlc4'] as const
+/** Series only the history lab reads (years of them on the PC): funding %/yr, open interest, the crypto and stock fear gauges. */
+export const LAB_SERIES = ['funding', 'oi', 'dvol', 'vix'] as const
 
 type Arg = 'src' | 'len' | 'len?'
 /** The functions a formula may call, with their arguments: a series, or a whole-number length (1 to 1000). */
@@ -143,9 +145,9 @@ export function parseFormula(raw: string, opts: { allowConst?: boolean; allowFun
         return { t: 'call', fn: tok.v, args }
       }
       if ((SERIES as readonly string[]).includes(tok.v)) return { t: 'var', name: tok.v }
-      if (tok.v === 'funding') {
-        if (!opts.allowFunding) throw new Bad('"funding" works in the history lab (/lab-after, /lab-test), where years of it are read; not in a plot, scan or alert.')
-        return { t: 'var', name: 'funding' }
+      if ((LAB_SERIES as readonly string[]).includes(tok.v)) {
+        if (!opts.allowFunding) throw new Bad(`"${tok.v}" works in the history lab (/lab-after, /lab-test, /lab-swarm), where years of it are read; not in a plot, scan or alert.`)
+        return { t: 'var', name: tok.v }
       }
       throw new Bad(`"${tok.v}" is not a series here. ${HINT}`)
     }
@@ -231,7 +233,7 @@ function dim(n: Node): Dim {
     case 'num':
       return { k: 'const', v: n.v }
     case 'var':
-      return n.name === 'volume' || n.name === 'funding' ? { k: 'other' } : { k: 'level', w: 1 }
+      return n.name === 'volume' || (LAB_SERIES as readonly string[]).includes(n.name) ? { k: 'other' } : { k: 'level', w: 1 }
     case 'neg': {
       const a = dim(n.a)
       return a.k === 'level' ? { k: 'level', w: -a.w } : a.k === 'const' ? { k: 'const', v: -a.v } : a
@@ -309,6 +311,12 @@ function seriesOf(name: string, c: readonly Candle[]): Num[] {
       return c.map(k => k.v)
     case 'funding':
       return c.map(k => k.f ?? null)
+    case 'oi':
+      return c.map(k => k.oi ?? null)
+    case 'dvol':
+      return c.map(k => k.dv ?? null)
+    case 'vix':
+      return c.map(k => k.vx ?? null)
     case 'hl2':
       return c.map(k => (k.h + k.l) / 2)
     case 'hlc3':
@@ -329,12 +337,45 @@ function zip(a: readonly Num[], b: readonly Num[], f: (x: number, y: number) => 
   })
 }
 
-function window(src: readonly Num[], len: number, f: (w: number[]) => number): Num[] {
-  return src.map((_, i) => {
-    if (i < len - 1) return null
-    const w = src.slice(i - len + 1, i + 1)
-    return w.some(x => x === null) ? null : f(w as number[])
-  })
+/** ta.highest (dir 1) or ta.lowest (dir -1) in one pass (a monotonic queue); null while the window holds an na. */
+function extreme(src: readonly Num[], len: number, dir: 1 | -1): Num[] {
+  const out: Num[] = new Array(src.length).fill(null)
+  const q = new Int32Array(src.length)
+  let head = 0
+  let tail = 0
+  let lastNull = -1
+  for (let i = 0; i < src.length; i++) {
+    const v = src[i]
+    if (v === null || v === undefined) {
+      lastNull = i
+      head = tail = 0
+      continue
+    }
+    while (tail > head && dir * ((src[q[tail - 1] as number] as number) - v) <= 0) tail--
+    q[tail++] = i
+    while ((q[head] as number) <= i - len) head++
+    if (i >= len - 1 && i - lastNull >= len) out[i] = src[q[head] as number] as number
+  }
+  return out
+}
+
+/** ta.cci without copying each window: mean, then mean absolute deviation, summed in window order; null while the window holds an na. */
+function cciOf(src: readonly Num[], len: number): Num[] {
+  const out: Num[] = new Array(src.length).fill(null)
+  let lastNull = -1
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] === null || src[i] === undefined) lastNull = i
+    if (i < len - 1 || i - lastNull < len) continue
+    let sum = 0
+    for (let k = i - len + 1; k <= i; k++) sum += src[k] as number
+    const mean = sum / len
+    let dev = 0
+    for (let k = i - len + 1; k <= i; k++) dev += Math.abs((src[k] as number) - mean)
+    dev /= len
+    const v = dev === 0 ? Number.NaN : ((src[i] as number) - mean) / (0.015 * dev)
+    out[i] = Number.isNaN(v) ? null : v
+  }
+  return out
 }
 
 /** ta.rsi on a series that may start with na: from its first value on, gaps held at the last value. */
@@ -384,9 +425,9 @@ export function evalFormula(n: Node, c: readonly Candle[]): Num[] {
         case 'ta.stdev':
           return stdev(src, len)
         case 'ta.highest':
-          return window(src, len, w => Math.max(...w))
+          return extreme(src, len, 1)
         case 'ta.lowest':
-          return window(src, len, w => Math.min(...w))
+          return extreme(src, len, -1)
         case 'ta.change':
         case 'ta.mom':
           return src.map((v, i) => (i < len || v === null || src[i - len] === null ? null : v - (src[i - len] as number)))
@@ -414,11 +455,7 @@ export function evalFormula(n: Node, c: readonly Candle[]): Num[] {
         }
         case 'ta.cci':
           // Pine: (source - ta.sma(source, length)) / (0.015 * ta.dev(source, length)), ta.dev the mean absolute deviation
-          return window(src, len, w => {
-            const mean = w.reduce((s, x) => s + x, 0) / w.length
-            const dev = w.reduce((s, x) => s + Math.abs(x - mean), 0) / w.length
-            return dev === 0 ? Number.NaN : ((w[w.length - 1] as number) - mean) / (0.015 * dev)
-          }).map(v => (v === null || Number.isNaN(v) ? null : v))
+          return cciOf(src, len)
         case 'ta.atr':
           return rma(trueRange(c), len)
         case 'math.abs':

@@ -146,7 +146,7 @@ test('on pure noise the luck check says "unlikely" about 1 time in 20, not more,
     const s = spec({ enter, exit, fee: 0 })
     const cut = 630
     const u = partResult(runTest(s, candles, [], cut), candles, cut, candles.length, 'long')
-    if (u.n < MIN_UNSEEN) continue
+    if (u.n < 10) continue
     tested++
     if (u.avg > 0 && luckChance(shuffleCheck(s, candles, [], cut, u.avg, 99, k + 1).p, 1) < 0.05) passed++
   }
@@ -172,8 +172,8 @@ test('a rule that really reads the order passes the luck check', () => {
   const s = spec({ enter: 'close >= ta.highest(close, 11)', hold: 5, fee: 0 })
   const r = honestTest(s, { enter: 'close >= ta.highest(close, 11)' }, candles, [], 1, 99)
   expect(r.unseen.n >= MIN_UNSEEN).toBe(true)
-  expect(r.shuffle !== null && r.shuffle.p < 0.05).toBe(true)
-  expect(luckLine(r, 'TEST 1h').includes('Unlikely to be luck alone')).toBe(true)
+  expect(r.luck !== null && r.luck.survives && r.luck.p < 0.05).toBe(true)
+  expect(luckLine(r, 'TEST 1h').includes('so it beats luck')).toBe(true)
 })
 
 test('/lab-test words: enter, exit, hold, side, fee and interval', () => {

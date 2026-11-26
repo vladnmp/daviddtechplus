@@ -4,7 +4,8 @@
 // Pure: no `$`.
 
 import type { Candle } from '../types'
-import { evalFormula } from './formula'
+import { evalFormula, printFormula } from './formula'
+import type { Node } from './formula'
 import { parseScan, scanWarmup } from './scan'
 import type { Scan } from './scan'
 
@@ -54,41 +55,53 @@ export function conditionWarmup(c: Condition): number {
 }
 
 /** The condition on every candle: true, false, or null while a side is still warming up. */
+/** Each side worked out once per set of candles: a swarm of 200 rules shares its rsi and its ema 200. */
+const sideMemo = new WeakMap<readonly Candle[], Map<string, ReturnType<typeof evalFormula>>>()
+function sideOf(n: Node, candles: readonly Candle[]): ReturnType<typeof evalFormula> {
+  let memo = sideMemo.get(candles)
+  if (!memo) sideMemo.set(candles, (memo = new Map()))
+  const key = printFormula(n)
+  let got = memo.get(key)
+  if (!got) {
+    got = evalFormula(n, candles)
+    if (memo.size < 400) memo.set(key, got)
+  }
+  return got
+}
+
 export function conditionSeries(c: Condition, candles: readonly Candle[]): (boolean | null)[] {
-  const each = c.parts.map(p => {
-    const a = evalFormula(p.left, candles)
-    const b = evalFormula(p.right, candles)
-    return candles.map((_, i): boolean | null => {
+  const n = candles.length
+  const out: (boolean | null)[] = new Array(n).fill(true)
+  for (const p of c.parts) {
+    const a = sideOf(p.left, candles)
+    const b = sideOf(p.right, candles)
+    const op = p.op
+    for (let i = 0; i < n; i++) {
+      if (out[i] === null) continue
       const x = a[i]
       const y = b[i]
-      if (x === null || x === undefined || y === null || y === undefined) return null
-      switch (p.op) {
-        case '<':
-          return x < y
-        case '>':
-          return x > y
-        case '<=':
-          return x <= y
-        case '>=':
-          return x >= y
-        default: {
-          const px = a[i - 1]
-          const py = b[i - 1]
-          if (px === null || px === undefined || py === null || py === undefined) return null
-          return p.op === 'crosses above' ? px <= py && x > y : px >= py && x < y
-        }
+      if (x === null || x === undefined || y === null || y === undefined) {
+        out[i] = null
+        continue
       }
-    })
-  })
-  return candles.map((_, i) => {
-    let out: boolean | null = true
-    for (const s of each) {
-      const v = s[i] ?? null
-      if (v === null) return null
-      if (!v) out = false
+      let v: boolean
+      if (op === '<') v = x < y
+      else if (op === '>') v = x > y
+      else if (op === '<=') v = x <= y
+      else if (op === '>=') v = x >= y
+      else {
+        const px = a[i - 1]
+        const py = b[i - 1]
+        if (px === null || px === undefined || py === null || py === undefined) {
+          out[i] = null
+          continue
+        }
+        v = op === 'crosses above' ? px <= py && x > y : px >= py && x < y
+      }
+      if (!v) out[i] = false
     }
-    return out
-  })
+  }
+  return out
 }
 
 // Small statistics, written out so a member's AI can check them.

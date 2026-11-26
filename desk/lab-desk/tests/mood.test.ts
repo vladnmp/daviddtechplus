@@ -80,6 +80,6 @@ test('the honest test text carries the mood line before the luck line', () => {
   const text = testText(r, 'BTC', '1h', 0)
   const at = text.split('\n').findIndex(l => l.startsWith('Market mood'))
   expect(at).toBeGreaterThan(0)
-  expect(text.split('\n')[at + 1]).toMatch(/^Luck check:/)
+  expect(text.split('\n')[at + 1]).toMatch(/^Luck check/)
   expect(text).not.toMatch(banned)
 })

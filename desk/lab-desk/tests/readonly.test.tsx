@@ -86,7 +86,7 @@ test('/lab-chart reset closes the pane, turns the watchlist off and wipes every 
   expect([...store.keys()].sort()).toEqual(['forecast:BTC:5', 'watch'])
 
   const answer = await $.command.run(typed('lab-chart', 'reset'))
-  expect(answer.text).toBe('Desk reset: chart closed, watchlist off, 2 saved items wiped. The desk keeps nothing now.')
+  expect(answer.text).toBe('Desk reset: chart closed, watchlist off, 2 saved items wiped. The desk keeps nothing now.\nNext: /lab-chart BTC 1h opens a fresh chart.')
   expect(store.size).toBe(0)
   expect(w.closes).toContain('lab-desk-chart')
   expect(w.statuses.at(-1)).toBeUndefined()

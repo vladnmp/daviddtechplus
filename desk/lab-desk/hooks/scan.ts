@@ -35,6 +35,8 @@ export function expandWords(text: string): string {
   return text
     .toLowerCase()
     .replace(/(?<![.\w])price\b/g, 'close')
+    .replace(/(?<![.\w])open interest\b/g, 'oi')
+    .replace(/(?<![.\w])(oi|dvol|vix|funding)\s+change(?:\s+(\d+))?\b(?!\s*\()/g, (_, s: string, n: string | undefined) => `ta.roc(${s}, ${n ?? 24})`)
     .replace(/(?<![.\w])(ema|sma|hma|wma|rma|vwma)\s+(\d+)\b(?!\s*\()/g, 'ta.$1(close, $2)')
     .replace(/(?<![.\w])cci(?:\s+(\d+))?\b(?!\s*\()/g, (_, n: string | undefined) => `ta.cci(hlc3, ${n ?? 20})`)
     .replace(/(?<![.\w])roc(?:\s+(\d+))?\b(?!\s*\()/g, (_, n: string | undefined) => `ta.roc(close, ${n ?? 9})`)

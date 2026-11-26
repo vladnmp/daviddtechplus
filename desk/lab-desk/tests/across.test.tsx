@@ -57,7 +57,7 @@ test('/lab-test across coins: a line per coin, unknown names said, each coin a t
   // Each coin counted the test as a try on itself: the same test on BTC alone is still its first, a new one its second.
   expect(await run('rsi < 50 exit rsi > 55 on 1h')).toMatch(/1 try on BTC 1h so far/)
   expect(await run('rsi < 45 exit rsi > 55 on 1h')).toMatch(/2 tries on BTC 1h so far/)
-  expect(await run('rsi < 50 exit rsi > 55 across ETH SOL')).toMatch(/^· ETH: .*\(1 try\)\.$/m)
+  expect(await run('rsi < 50 exit rsi > 55 across ETH SOL')).toMatch(/^· ETH: .*\b1 try\)\.$/m)
 })
 
 test('a coin named twice runs once', async ($, on) => {

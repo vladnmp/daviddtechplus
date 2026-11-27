@@ -1199,8 +1199,8 @@ async function runTestTool($: EngineInterface, input: { enter?: unknown; exit?: 
   let onChart = 0
   if (input.mark !== false && result.unseen.n > 0) {
     const trades = result.unseen.trades
-    const pins = trades.slice(-200).map(t => ({ time: t.t, dir: spec.side === 'long' ? 'up' : 'down', label: pct(t.ret, 1) }))
-    const spans = trades.slice(-20).map(t => ({ from: t.t, to: t.t2 }))
+    const pins = trades.slice(-200).map(t => ({ time: t.t, dir: spec.side === 'long' ? 'up' : 'down', label: pct(t.ret, 1), until: t.t2 }))
+    const spans = trades.slice(-20).map(t => ({ from: t.t, to: t.t2, trade: t.ret > 0 ? 'won' : 'lost' }))
     onChart = await pinLayer($, coin, interval, 'test', { pins, spans, color: '#8bc34a' })
   }
   const d = deep ? ' deep' : ''
@@ -1367,8 +1367,8 @@ async function runSwarmTool($: EngineInterface, input: { rules?: unknown; coin?:
   let pinned = ''
   if (best?.unseen && best.unseen.n > 0 && input.mark !== false) {
     const trades = best.unseen.trades
-    const pins = trades.slice(-200).map(t => ({ time: t.t, dir: best.spec.side === 'long' ? 'up' : 'down', label: pct(t.ret, 1) }))
-    const n = await pinLayer($, coin, interval, 'swarm', { pins, spans: trades.slice(-20).map(t => ({ from: t.t, to: t.t2 })), color: '#e040fb' })
+    const pins = trades.slice(-200).map(t => ({ time: t.t, dir: best.spec.side === 'long' ? 'up' : 'down', label: pct(t.ret, 1), until: t.t2 }))
+    const n = await pinLayer($, coin, interval, 'swarm', { pins, spans: trades.slice(-20).map(t => ({ from: t.t, to: t.t2, trade: t.ret > 0 ? 'won' : 'lost' })), color: '#e040fb' })
     if (n > 0) pinned = `${n} unseen trade${n === 1 ? '' : 's'} of the strongest pinned on the chart (layer "swarm").`
   }
   const d = deep ? ' deep' : ''
@@ -1934,8 +1934,20 @@ async function showChart($: EngineInterface, coin: string, interval: string, foc
       : ctx
         ? `${coin} ${fmtPrice(ctx.price)} · 24h ${fmtPct(changePct(ctx))} · ${fundingText(ctx.funding)}`
         : `${coin}`
-  const placed = opened.isPlaced ? `${coin} ${interval} chart open, refreshing every ${refreshMs(interval) / 1000} s.` : `The chart pane could not open here (${opened.reason}).`
+  // No window attached yet (a session the app has not shown yet): the pane waits and draws once one attaches.
+  const waits = !opened.isPlaced && /^no-surface/.test(opened.reason ?? '')
+  const placed = opened.isPlaced
+    ? `${coin} ${interval} chart open, refreshing every ${refreshMs(interval) / 1000} s.`
+    : waits
+      ? `${coin} ${interval} chart set; it draws as soon as a window shows this session (none has attached yet).`
+      : `The chart pane could not open here (${opened.reason}).`
   return { text: `${placed} ${facts}.${endsReplay ? ' Bar replay ended with the switch.' : ''}` }
+}
+
+/** An SVG's own width and height (from its viewBox), for the Svg element's box; none when it has no viewBox. */
+export function svgSize(source: string): { width: number; height: number } | Record<string, never> {
+  const m = /^<svg [^>]*viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(source)
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : {}
 }
 
 /** The indicators' values at the last candle, one line each: "EMA 50 64,210". */
@@ -3948,13 +3960,11 @@ export const register: Register = (on, rawOptions) => {
       }
     } else {
       const { Svg } = $.ui.resolve(e)
-      picture = (
-        <Svg
-          source={deskSvg({ ...input, studies: list, marks: mine, theme: desk.theme, pitch: ZOOM_PITCH[await read($, zoom)] ?? 8 }, view.interval, view.coin, fanLabel)}
-          alt={deskAlt(view.coin, view.interval, view.candles, fan !== null, list)}
-          isInteractive
-        />
-      )
+      const source = deskSvg({ ...input, studies: list, marks: mine, theme: desk.theme, pitch: ZOOM_PITCH[await read($, zoom)] ?? 8, live: replayAt === 0 && back === 0 && !isOld }, view.interval, view.coin, fanLabel)
+      // The chart's own size, given outright: the desktop's frame otherwise kept its default 150 px height and
+      // shrank the chart to fit it.
+      const box = svgSize(source)
+      picture = <Svg source={source} alt={deskAlt(view.coin, view.interval, view.candles, fan !== null, list)} {...box} isInteractive />
     }
     const lastPrice = view.candles[view.candles.length - 1]?.c ?? ctx?.price ?? 0
     const caption = fan ? fanCaption(fan, lastPrice, fmtPrice, Math.max(20, Math.floor(e.props.bodyColumns))) : null

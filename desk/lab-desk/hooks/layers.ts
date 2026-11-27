@@ -150,7 +150,8 @@ export function addLayers(all: readonly Layer[], coin: string, raw: unknown, can
         if (t === null) continue
         const dir = q.dir === 'down' || q.dir === 'dot' ? q.dir : 'up'
         const price = Number(q.price)
-        pins.push({ t, dir, ...(Number.isFinite(price) && q.price !== null && q.price !== undefined ? { price } : {}), ...(clean(q.label, NAME_MAX) ? { label: clean(q.label, NAME_MAX) } : {}) })
+        const until = q.until === undefined ? null : timeOf(q.until)
+        pins.push({ t, dir, ...(Number.isFinite(price) && q.price !== null && q.price !== undefined ? { price } : {}), ...(clean(q.label, NAME_MAX) ? { label: clean(q.label, NAME_MAX) } : {}), ...(until !== null ? { until } : {}) })
       }
       if ((o.pins as unknown[]).length > MAX_PINS) notes.push(`"${name}": ${MAX_PINS} pins at most; the rest were left out.`)
     }
@@ -161,7 +162,7 @@ export function addLayers(all: readonly Layer[], coin: string, raw: unknown, can
         const a = timeOf(q.from ?? q.time ?? q.t)
         const b = timeOf(q.to ?? q.time2 ?? q.t2)
         if (a === null || b === null) continue
-        spans.push({ t: Math.min(a, b), t2: Math.max(a, b), ...(clean(q.label, NAME_MAX) ? { label: clean(q.label, NAME_MAX) } : {}) })
+        spans.push({ t: Math.min(a, b), t2: Math.max(a, b), ...(clean(q.label, NAME_MAX) ? { label: clean(q.label, NAME_MAX) } : {}), ...(q.trade === 'won' || q.trade === 'lost' ? { trade: q.trade } : {}) })
       }
       if ((o.spans as unknown[]).length > MAX_SPANS) notes.push(`"${name}": ${MAX_SPANS} spans at most; the rest were left out.`)
     }
@@ -261,12 +262,16 @@ export function layerMarks(layers: readonly Layer[], coin: string, candles: read
       const a = candleAt(candles, Math.max(s.t, first.t))
       const b = candleAt(candles, Math.min(s.t2, last.t))
       if (!a || !b || s.t > last.t || s.t2 < first.t) continue
-      out.push({ coin, kind: 'span', price: 0, t: a.t, t2: b.t, label: s.label ?? '', ...(l.ink ? { ink: l.ink } : {}) })
+      // A trade cut by the chart's edge keeps the band: its line would start or end at the wrong close.
+      const whole = s.trade !== undefined && s.t >= first.t && s.t2 <= last.t
+      out.push({ coin, kind: 'span', price: 0, t: a.t, t2: b.t, label: s.label ?? '', ...(l.ink ? { ink: l.ink } : {}), ...(whole ? { trade: s.trade } : {}) })
     }
     for (const p of l.pins ?? []) {
       const c = candleAt(candles, p.t)
       if (!c) continue
-      out.push({ coin, kind: 'pin', price: p.price ?? (p.dir === 'up' ? c.l : p.dir === 'down' ? c.h : c.c), t: c.t, dir: p.dir, label: p.label ?? '', ...(l.ink ? { ink: l.ink } : {}) })
+      // A trade that ends after the last candle shown (a replay) keeps its result to itself.
+      const label = p.until !== undefined && p.until > last.t ? '' : (p.label ?? '')
+      out.push({ coin, kind: 'pin', price: p.price ?? (p.dir === 'up' ? c.l : p.dir === 'down' ? c.h : c.c), t: c.t, dir: p.dir, label, ...(l.ink ? { ink: l.ink } : {}) })
     }
   }
   return out
@@ -281,7 +286,11 @@ export function layersLine(layers: readonly Layer[], coin: string, studies: read
     const bits: string[] = []
     if (l.points?.length) bits.push(`line, ${l.points.length} points, ${l.pane === 'price' ? 'on the price chart' : 'own pane'}${shown.has(`layer ${l.name}`) ? '' : ', none on the candles shown'}`)
     if (l.pins?.length) bits.push(`${l.pins.length} pin${l.pins.length === 1 ? '' : 's'}`)
-    if (l.spans?.length) bits.push(`${l.spans.length} span${l.spans.length === 1 ? '' : 's'}`)
+    const trades = (l.spans ?? []).filter(s => s.trade)
+    const plain = (l.spans?.length ?? 0) - trades.length
+    // No count or tally: in a replay some of these trades end after the candles shown.
+    if (trades.length > 0) bits.push('trades as lines from entry to exit close')
+    if (plain > 0) bits.push(`${plain} span${plain === 1 ? '' : 's'}`)
     return `${l.name} (${bits.join(', ')})`
   })
   return `Layers: ${parts.join(' · ')}.`

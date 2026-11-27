@@ -101,13 +101,16 @@ export type Mark = {
   ink?: string
   /** A pin: an arrow under the candle pointing up, over it pointing down, or a dot at its price. */
   dir?: 'up' | 'down' | 'dot'
+  /** A span that is one Lab trade, whole on the chart: drawn as a line from its entry close to its exit close. */
+  trade?: 'won' | 'lost'
 }
 
 /** A pin on a candle in a layer: `t` is any time inside the candle (ms). */
-export type LayerPin = { t: number; dir: 'up' | 'down' | 'dot'; price?: number; label?: string }
+/** `until`: a Lab trade's exit candle (ms); its label (the result) shows only once that candle is on the chart. */
+export type LayerPin = { t: number; dir: 'up' | 'down' | 'dot'; price?: number; label?: string; until?: number }
 
 /** A shaded time span in a layer, from `t` to `t2` (ms). */
-export type LayerSpan = { t: number; t2: number; label?: string }
+export type LayerSpan = { t: number; t2: number; label?: string; trade?: 'won' | 'lost' }
 
 /**
  * Claude's own result painted on a coin's chart under a name: a line (time, value points), pins on candles and

@@ -32,6 +32,8 @@ export type DeskInput = {
   compare?: { coin: string; candles: readonly Candle[]; from: number } | null
   /** Paths ahead (moments like now), drawn right of the candles when no DaviddTech+ range shows. */
   ghost?: Ghost | null
+  /** The desk's live chart (not a save, a card, a replay or a chart scrolled back): a soft pulse at the last close. */
+  live?: boolean
 }
 
 const THEMES = {
@@ -351,7 +353,7 @@ export function deskSvgAt(input: DeskInput, interval: string, coin: string, fanL
   const tags: string[] = []
   out.push('<g clip-path="url(#pp)">')
   // Layer spans: a soft band across the price pane from the first candle to the last, its label at the top.
-  for (const m of marks) if (m.kind === 'span' && m.t !== undefined && m.t2 !== undefined) {
+  for (const m of marks) if (m.kind === 'span' && !m.trade && m.t !== undefined && m.t2 !== undefined) {
     const i1 = candles.findIndex(c => c.t === m.t)
     const i2 = candles.findIndex(c => c.t === m.t2)
     if (i1 < 0 || i2 < 0) continue
@@ -461,6 +463,27 @@ export function deskSvgAt(input: DeskInput, interval: string, coin: string, fanL
   out.push(`<path d="${wicks.u.join('')}" stroke="${up}" fill="none"/><path d="${wicks.d.join('')}" stroke="${down}" fill="none"/>`)
   out.push(`<path d="${bodies.u.join('')}" fill="${up}"/><path d="${bodies.d.join('')}" fill="${down}"/>`)
   if (bodies.uh.length > 0) out.push(`<path d="${bodies.uh.join('')}" fill="${th.panel}" stroke="${up}" stroke-width="1.5"/>`)
+
+  // Lab trades: a light box between the entry and exit closes, a dashed line across it, a hollow dot at the entry
+  // and a filled one at the exit, in the up color when the trade made money and the down color when it lost.
+  const tradeMarks = marks.filter(m => m.kind === 'span' && m.trade && m.t !== undefined && m.t2 !== undefined)
+  if (tradeMarks.length > 0) {
+    out.push('<g clip-path="url(#pp)" pointer-events="none">')
+    for (const m of tradeMarks) {
+      const i1 = candles.findIndex(c => c.t === m.t)
+      const i2 = candles.findIndex(c => c.t === m.t2)
+      if (i1 < 0 || i2 < 0) continue
+      const x1 = X(i1)
+      const x2 = X(i2)
+      const y1 = Y((candles[i1] as Candle).c)
+      const y2 = Y((candles[i2] as Candle).c)
+      const col = m.trade === 'won' ? up : down
+      out.push(`<rect x="${f1(x1)}" y="${f1(Math.min(y1, y2))}" width="${f1(Math.max(1, x2 - x1))}" height="${f1(Math.max(1, Math.abs(y2 - y1)))}" fill="${col}" fill-opacity="${isLight ? '.12' : '.16'}"/>`)
+      out.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="${col}" stroke-width="1.2" stroke-dasharray="3 2"/>`)
+      out.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="2.6" fill="${th.panel}" stroke="${col}" stroke-width="1.3"/><circle cx="${f1(x2)}" cy="${f1(y2)}" r="2.6" fill="${col}"/>`)
+    }
+    out.push('</g>')
+  }
 
   // Levels across the chart with their price on the scale, and notes above their candle.
   out.push('<g clip-path="url(#pp)">')
@@ -574,6 +597,13 @@ export function deskSvgAt(input: DeskInput, interval: string, coin: string, fanL
     const txt = hex(last.c >= last.o ? pal.upText : pal.downText)
     out.push(`<line x1="0" x2="${plotRight}" y1="${f1(y)}" y2="${f1(y)}" stroke="${col}" stroke-opacity=".8" stroke-dasharray="1 3"/>`)
     out.push(`<rect x="${plotRight + 1}" y="${f1(y - 9)}" width="${SCALE - 3}" height="18" rx="3" fill="${col}"/><text x="${plotRight + 6}" y="${f1(y + 4)}" fill="${txt}">${esc(fmtPrice(last.c))}</text>`)
+    // Live: a still dot at the last close with a ring that swells and fades every 2.4 s. The ring is hidden unless
+    // it animates, so wherever motion is off (or reduced) only the still dot shows.
+    const lx = X(candles.length - 1)
+    if (input.live && lx <= plotRight) {
+      out.push(`<style>@keyframes lp{0%{opacity:.7;transform:scale(1)}70%,100%{opacity:0;transform:scale(3.2)}}.lp{opacity:0;transform-box:fill-box;transform-origin:center;animation:lp 2.4s ease-out infinite}@media (prefers-reduced-motion:reduce){.lp{animation:none}}</style>`)
+      out.push(`<g pointer-events="none"><circle class="lp" cx="${f1(lx)}" cy="${f1(y)}" r="3" fill="none" stroke="${col}" stroke-width="1.5"/><circle cx="${f1(lx)}" cy="${f1(y)}" r="2.6" fill="${col}" stroke="${th.panel}" stroke-width="1"/></g>`)
+    }
   }
 
   // Lower panes.

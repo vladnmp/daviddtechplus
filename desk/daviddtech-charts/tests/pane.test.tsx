@@ -63,6 +63,10 @@ test('a forecast opens the pane and passes the answer through unchanged', async 
     const svg = await ui.find({ type: 'Svg' })
     expect(String(svg?.props.alt)).toContain('NVDA')
     expect(String(svg?.props.source).startsWith('<svg')).toBe(true)
+    // The box carries the picture's own size, so the desktop frame does not shrink it to its default height.
+    const vb = /viewBox="0 0 (\d+) (\d+)"/.exec(String(svg?.props.source))
+    expect(svg?.props.width).toBe(Number(vb?.[1]))
+    expect(svg?.props.height).toBe(Number(vb?.[2]))
     expect(await ui.find({ type: 'Raster' })).toBeUndefined()
     await ui.unmount()
   }

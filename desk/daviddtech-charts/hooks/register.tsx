@@ -158,7 +158,10 @@ export const register: Register = (on, options) => {
     } else {
       const { Svg } = $.ui.resolve(e)
       const source = svgFor(chart)
-      if (source) picture = <Svg source={source} alt={chart.summary} isInteractive />
+      // The picture's own size, given outright: the desktop's frame otherwise kept its default 150 px height and
+      // shrank the picture to fit it.
+      const box = /^<svg [^>]*viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(source ?? '')
+      if (source) picture = <Svg source={source} alt={chart.summary} {...(box ? { width: Number(box[1]), height: Number(box[2]) } : {})} isInteractive />
     }
     // The 80% range in words, directly under the date axis or the picture, in the same column box.
     const caption = picture ? captionOf(chart, Math.max(20, Math.floor(e.props.bodyColumns))) : []

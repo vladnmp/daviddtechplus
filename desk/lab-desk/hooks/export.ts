@@ -596,3 +596,54 @@ export function markerPine(o: { enter: Condition; exit: Condition | null; hold: 
   ].join('\n')
   return { code, left }
 }
+
+/**
+ * A Workshop rule as a TradingView strategy that fills where the Lab test fills: at the close of the candle where the
+ * rule opens and of the one where it closes, one trade at a time, the same fee a side, no slippage, over the Lab's own
+ * window: trades from `from` (the first candle a trade may open on), and at the seen part's last candle (the one before
+ * `cut`) any open trade closes and nothing opens, so the unseen part starts fresh, as the Lab runs it. Funding is the
+ * one thing TradingView leaves out. Null when a part reads what only the desk watches (the fills could not match), or
+ * nothing would ever close it.
+ */
+export function strategyPine(o: { enter: Condition; exit: Condition | null; hold: number | null; side: 'long' | 'short'; fee: number; name: string; rule: string; coin: string; interval: string; venue: string; from: number; cut: number }): string | null {
+  const parts = (c: Condition) => (c.parts.some(p => readsDesk(p.left) || readsDesk(p.right)) ? null : c.parts.map(partPine))
+  const opens = parts(o.enter)
+  const closes = o.exit ? parts(o.exit) : []
+  if (!opens || opens.length === 0 || !closes || (closes.length === 0 && o.hold === null)) return null
+  const closeIf = [...(closes.length > 0 ? ['closes_if'] : []), ...(o.hold !== null ? [`bar_index - opened_at >= ${o.hold}`] : []), 'seen_end'].join(' or ')
+  const fee = Number((o.fee * 100).toFixed(4))
+  const stamp = (t: number) => {
+    const d = new Date(t)
+    return `timestamp("UTC", ${d.getUTCFullYear()}, ${d.getUTCMonth() + 1}, ${d.getUTCDate()}, ${d.getUTCHours()}, ${d.getUTCMinutes()})`
+  }
+  const day = (t: number) => new Date(t).toISOString().slice(0, 16).replace('T', ' ')
+  return [
+    `// Lab desk Workshop: the tested rule with the Lab test's own fills, for TradingView's Strategy Tester`,
+    '//@version=6',
+    `strategy("Workshop · ${o.name} · ${o.coin} ${o.interval} · Lab fills", overlay = true, initial_capital = 1000, default_qty_type = strategy.percent_of_equity, default_qty_value = 10, commission_type = strategy.commission.percent, commission_value = ${fee}, slippage = 0, process_orders_on_close = true)`,
+    '',
+    `// The tested rule (${o.side}): ${o.rule}`,
+    `// Fills as the Lab test fills: at the close of the candle where the rule opens or closes, ${fee}% fee a side, no slippage, one trade at a time.`,
+    `// The Lab's window: trades from ${day(o.from)} UTC; at the last candle before ${day(o.cut)} UTC (where the unseen part starts) a trade closes and none opens.`,
+    `// From there each trade's % move matches the Lab's before funding (TradingView leaves funding out). The Lab read ${o.venue}'s candles; another venue's chart, or one that starts later, fills a little differently.`,
+    '// A live market order fills nearer the next open: set process_orders_on_close = false to see that, and compare.',
+    '',
+    `opens_if = ${opens.join(' and ')}`,
+    ...(closes.length > 0 ? [`closes_if = ${closes.join(' and ')}`] : []),
+    `lab_from = ${stamp(o.from)}`,
+    `lab_cut = ${stamp(o.cut)}`,
+    'seen_end = time < lab_cut and nz(time_close, time) >= lab_cut',
+    '',
+    'var int opened_at = na',
+    'if barstate.isconfirmed',
+    '    if na(opened_at)',
+    '        if bar_index >= 1 and time >= lab_from and not seen_end and opens_if',
+    '            opened_at := bar_index',
+    `            strategy.entry("rule", ${o.side === 'long' ? 'strategy.long' : 'strategy.short'})`,
+    `    else if ${closeIf}`,
+    '        opened_at := na',
+    '        strategy.close("rule")',
+    '',
+    '// Checks: v6 · same interval as the test · no future data · closed candles only · fills at the same closes as the Lab test',
+  ].join('\n')
+}

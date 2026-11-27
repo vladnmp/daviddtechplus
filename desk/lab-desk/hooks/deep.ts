@@ -227,6 +227,22 @@ export function unpackCandles(text: string): Candle[] {
   }
 }
 
+/** Hyperliquid's hourly funding kept on the PC: where the read started, then [[t, rate], ...], oldest first. */
+export function packHlFunding(from: number, rows: readonly Funding[]): string {
+  return JSON.stringify({ from, rows: rows.map(r => [r.t, r.rate]) })
+}
+
+export function unpackHlFunding(text: string): { from: number; rows: Funding[] } | null {
+  try {
+    const raw = JSON.parse(text) as { from?: unknown; rows?: unknown }
+    if (typeof raw.from !== 'number' || !Number.isFinite(raw.from) || !Array.isArray(raw.rows)) return null
+    const rows = raw.rows.filter(Array.isArray).map(k => ({ t: Number(k[0]), rate: Number(k[1]) })).filter(r => Number.isFinite(r.t) && Number.isFinite(r.rate))
+    return { from: raw.from, rows }
+  } catch {
+    return null
+  }
+}
+
 export function packPoints(rows: readonly { t: number; v?: number; rate?: number }[]): string {
   return JSON.stringify(rows.map(p => [p.t, p.v ?? p.rate]))
 }

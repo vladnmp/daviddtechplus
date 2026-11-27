@@ -9,7 +9,8 @@ import { NOW, engine, typed } from './fixtures'
 import { parseTest, runTest, seededRandom } from '../hooks/honest'
 import type { TestSpec } from '../hooks/honest'
 import type { SwarmResult } from '../hooks/swarm'
-import { markerPine } from '../hooks/export'
+import { markerPine, strategyPine } from '../hooks/export'
+import { conditionSeries } from '../hooks/history'
 import { parseTestWords, roomyInterval } from '../hooks/register'
 import { BANNED_WORDS, WORKSHOP_VERSIONS, benchAdd, cardSvg, cardText, fingerprint, ideaFile, lastingNext, markerOpens, slugOf, verdictLine, verdictOf, versionsOf } from '../hooks/workshop'
 import type { Run, Verdict } from '../hooks/workshop'
@@ -129,6 +130,63 @@ test('the marker in Pine: alerts on closed candles, parts only the desk reads ar
   // Only what the desk reads: no marker at all.
   const only = spec('funding < 0 hold 24')
   expect(markerPine({ enter: only.enter, exit: null, hold: 24, side: 'long', name: 'x', rule: '', coin: 'BTC', interval: '1h' })).toBe(null)
+})
+
+/**
+ * The strategy's fills as its Pine code makes them: opens on one closed candle from `from` on, closes on a later one,
+ * nothing opens on a close candle; the candle before `cut` closes any trade and opens none.
+ */
+function strategyFills(s: TestSpec, c: readonly Candle[], from: number, cut: number): [number, number][] {
+  const a = conditionSeries(s.enter, c)
+  const b = s.exit ? conditionSeries(s.exit, c) : null
+  const out: [number, number][] = []
+  let at: number | null = null
+  for (let i = 0; i < c.length; i++) {
+    const seenEnd = i === cut - 1
+    if (at === null) {
+      if (i >= 1 && i >= from && !seenEnd && a[i] === true) at = i
+    } else if ((b && b[i] === true) || (s.hold !== null && i - at >= s.hold) || seenEnd) {
+      out.push([at, i])
+      at = null
+    }
+  }
+  if (at !== null) out.push([at, c.length - 1])
+  return out
+}
+
+test('the strategy in Pine fills where the Lab test fills: same window, same candles in and out, same fee, at the closes', () => {
+  const c = walk(3000, 9, false)
+  const cut = 2100
+  for (const w of ['rsi < 35 exit rsi > 55', 'ema 20 crosses above ema 50 hold 24', 'close > ema 200 and rsi < 45 hold 8 short', 'rsi < 40 hold 300']) {
+    const s = spec(w)
+    // As the Swarm runs it: the seen part from the warm-up's end (any trade still open valued at its last close),
+    // then the unseen part afresh from the cut. The Lab never opens on the last candle, so that one is left out.
+    const warm = 210
+    const lab = [...runTest(s, c.slice(0, cut), [], warm), ...runTest(s, c, [], cut)].map(t => [t.i, t.j])
+    const fills = strategyFills(s, c, warm, cut).filter(([i]) => i < c.length - 1)
+    expect(fills).toEqual(lab)
+    expect(fills.length).toBeGreaterThan(5)
+  }
+  const s = spec('rsi < 35 exit rsi > 55 hold 30')
+  const at = { from: Date.UTC(2024, 7, 15, 16), cut: Date.UTC(2026, 2, 1) }
+  const code = strategyPine({ enter: s.enter, exit: s.exit, hold: s.hold, side: 'long', fee: 0.00045, name: 'dip', rule: 'rsi < 35 exit rsi > 55 hold 30', coin: 'SOL', interval: '4h', venue: 'Hyperliquid', ...at }) ?? ''
+  // Not "written with the Aid rules": it keeps the Lab's fills (at the close, no slippage), which those rules flag.
+  expect(code).not.toMatch(/DaviddTech Aid/)
+  expect(code).toContain('commission_type = strategy.commission.percent, commission_value = 0.045, slippage = 0, process_orders_on_close = true')
+  expect(code).toContain('opens_if = ta.rsi(close, 14) < 35')
+  expect(code).toContain('closes_if = ta.rsi(close, 14) > 55')
+  expect(code).toContain('lab_from = timestamp("UTC", 2024, 8, 15, 16, 0)')
+  expect(code).toContain('lab_cut = timestamp("UTC", 2026, 3, 1, 0, 0)')
+  expect(code).toContain('        if bar_index >= 1 and time >= lab_from and not seen_end and opens_if')
+  expect(code).toContain('    else if closes_if or bar_index - opened_at >= 30 or seen_end')
+  expect(code).toContain('            strategy.entry("rule", strategy.long)')
+  expect(code).toContain('        strategy.close("rule")')
+  expect(code).not.toMatch(BANNED_WORDS)
+  const short = spec('ema 20 crosses below ema 50 hold 6 short')
+  expect(strategyPine({ enter: short.enter, exit: null, hold: 6, side: 'short', fee: 0.0005, name: 'x', rule: '', coin: 'BTC', interval: '1h', venue: 'Binance', ...at })).toContain('strategy.entry("rule", strategy.short)')
+  // A part only the desk reads: the fills could not match, so no strategy.
+  const funded = spec('rsi < 30 and funding < 0 exit rsi > 50')
+  expect(strategyPine({ enter: funded.enter, exit: funded.exit, hold: null, side: 'long', fee: 0.00045, name: 'x', rule: '', coin: 'BTC', interval: '1h', venue: 'Hyperliquid', ...at })).toBe(null)
 })
 
 const part = (n: number, avg: number) => ({ n, winShare: 0.55, avg, total: avg * n, maxDrawdown: -0.05, hold: 0, tStat: 2, trades: [] })
@@ -277,12 +335,13 @@ test('on noise: the card first (nothing counted), then the run says not passed, 
   expect(text).toMatch(/^Not (passed|judged)/m)
   expect(text).toMatch(/^Tested: \d+ versions of your idea/m)
   expect(text).toMatch(/^Tries on ETH, all intervals: \d+ \(kept for good\)\. Lab desk/m)
-  expect(text).toMatch(/^Files: workshop\/dip\/ \(idea\.md, card\.md, card\.svg, result\.json, marker\.pine\)\.$/m)
+  expect(text).toMatch(/^Files: workshop\/dip\/ \(idea\.md, card\.md, card\.svg, result\.json, marker\.pine, strategy\.pine\)\.$/m)
   expect(text).toMatch(/^Next: /m)
   expect(text).toMatch(/^Market data: Hyperliquid public API$/m)
   expect(text.match(/^Next: /gm)?.length).toBe(1)
   expect(text).not.toMatch(BANNED_WORDS)
   expect(fileOf(files, 'workshop/dip/marker.pine')).toContain('alertcondition(opened, "opens"')
+  expect(fileOf(files, 'workshop/dip/strategy.pine')).toContain('commission_value = 0.045, slippage = 0, process_orders_on_close = true')
   expect(JSON.parse(fileOf(files, 'workshop/dip/result.json')).verdict).not.toBe('passed')
   const bench = JSON.parse(fileOf(files, '/data/lab-desk/workshop/bench.json')) as { since: number }[]
   expect(bench.length).toBe(1)
@@ -384,4 +443,31 @@ test('a young coin: on 1w the card says so at once, and a run with too few candl
   // A left-out note that ends in a full stop gets just the one.
   const card = await call({ action: 'card', name: 'note', rule: 'rsi < 30 hold 4', coin: 'HYPE', interval: '4h', deep: false, left_out: 'the news filter.' })
   expect(card).toMatch(/^Left out \(no Lab words for it\): the news filter\.$/m)
+})
+
+test('younger on Binance than on Hyperliquid: the 1d card runs on Hyperliquid\'s own candles and says so', async ($, on) => {
+  const D = 24 * H
+  // Binance lists the perp 100 days ago; Hyperliquid has 400 daily candles.
+  const binanceDays = (url: string) => {
+    const q = new URL(url)
+    if (!q.pathname.endsWith('/klines')) return { status: 200, text: '[]' }
+    const rows: unknown[] = []
+    for (let t = Math.max(Math.ceil(Number(q.searchParams.get('startTime') ?? 0) / D) * D, Math.ceil((NOW - 100 * D) / D) * D); t + D <= NOW && rows.length < 1500; t += D) rows.push([t, '10', '11', '9', String(10 + Math.sin(t / D)), '10', t + D - 1])
+    return { status: 200, text: JSON.stringify(rows) }
+  }
+  const w = engine(on, { get: binanceDays, candles: coin => rowsOf(walk(400, seedOf(coin), false).map((k, i) => ({ ...k, t: NOW - (401 - i) * D })), coin) })
+  mock.clock(on, { now: NOW })
+  memStore(on)
+  folders(on)
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  const call = async (input: Record<string, unknown>) => String((await $.tool.call({ tool: TOOL, ...input } as never)).result ?? '')
+  const card = await call({ action: 'card', name: 'daily', rule: 'rsi < 30 hold 4', coin: 'HYPE', interval: '1d' })
+  expect(card).toMatch(/^Workshop idea card: daily\./)
+  expect(card).toMatch(/^Binance has only \d+ closed 1d candles of HYPE, so this card runs on Hyperliquid's own 400\.$/m)
+  expect(card).not.toMatch(BANNED_WORDS)
+  // The run reads Hyperliquid's candles, not Binance's again.
+  const before = w.fetches.filter(f => f.includes('/klines')).length
+  const run = await call({ action: 'run', name: 'daily' })
+  expect(run).not.toMatch(/too few to test/)
+  expect(w.fetches.filter(f => f.includes('/klines')).length).toBe(before)
 })

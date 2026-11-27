@@ -5,6 +5,8 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Candle } from '../types'
 import {
+  packHlFunding,
+  unpackHlFunding,
   binanceSymbol,
   extrasOf,
   hourlyFunding,
@@ -221,4 +223,11 @@ test('odd names: kNEIRO is NEIROUSDT on Binance in 1000s, kSHIB is SHIB1000USDT 
   expect(Math.abs((c?.v ?? 0) - 3) < 1e-9).toBe(true)
   const btc = [{ t: 0, o: 1, h: 1, l: 1, c: 1, v: 1 }]
   expect(toCoinUnits('BTC', btc)).toBe(btc)
+})
+
+test('Hyperliquid funding on the PC: packed and read back, and a broken file reads as none', () => {
+  const rows = [{ t: 1000, rate: 0.0000125 }, { t: 3_601_000, rate: -0.00002 }]
+  expect(unpackHlFunding(packHlFunding(500, rows))).toEqual({ from: 500, rows })
+  expect(unpackHlFunding('not json')).toBe(null)
+  expect(unpackHlFunding('{"rows": []}')).toBe(null)
 })
